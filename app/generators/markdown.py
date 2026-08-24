@@ -28,11 +28,9 @@ def generate_docs(parsed: dict[str, Any]) -> dict[str, str]:
             parsed.get("connection_references", [])
         ),
         "app-modules.md": _generate_app_modules(parsed.get("app_modules", [])),
+        "plugins.md": _generate_plugins(parsed.get("plugins", {})),
+        "pcf-controls.md": _generate_controls(parsed.get("controls", [])),
     }
-
-    plugins = parsed.get("plugins", [])
-    if plugins:
-        docs["plugins.md"] = _generate_plugins(plugins)
 
     option_sets = parsed.get("global_option_sets", [])
     if option_sets:
@@ -85,6 +83,8 @@ def _generate_index(parsed: dict[str, Any], solution_name: str) -> str:
                 ["[Entity Relationships](relationships.md)", f"Relationships ({len(parsed.get('entity_relationships', []))})"],
                 ["[Connection References](connection-references.md)", f"Connection references ({len(parsed.get('connection_references', []))})"],
                 ["[App Modules](app-modules.md)", f"Model-driven apps ({len(parsed.get('app_modules', []))})"],
+                ["[Plugin Assemblies](plugins.md)", f"Plugin assemblies ({len(parsed.get('plugins', {}).get('assemblies', []))}) / Steps ({len(parsed.get('plugins', {}).get('steps', []))})"],
+                ["[PCF Controls](pcf-controls.md)", f"Custom controls ({len(parsed.get('controls', []))})"],
             ],
         ),
         "",
@@ -679,46 +679,184 @@ def _generate_global_option_sets(option_sets: list[dict[str, Any]]) -> str:
 # Plugins
 # ---------------------------------------------------------------------------
 
-def _generate_plugins(plugins: list[dict[str, Any]]) -> str:
-    lines = [_h(1, "Plugin Assemblies"), ""]
+def _generate_plugins(plugins: dict[str, Any]) -> str:
+    lines = [_h(1, "Plugin Assemblies & Step Registrations"), ""]
 
-    if not plugins:
+    assemblies = plugins.get("assemblies", []) if isinstance(plugins, dict) else []
+    steps = plugins.get("steps", []) if isinstance(plugins, dict) else []
+
+    if not assemblies and not steps:
         lines.append("_No plugin assemblies found in this solution._")
         return "\n".join(lines)
 
-    lines.append(f"**Total assemblies:** {len(plugins)}")
-    lines.append("")
+    lines += [
+        f"**Assemblies:** {len(assemblies)}  ",
+        f"**Step registrations:** {len(steps)}",
+        "",
+    ]
 
-    for plugin in plugins:
-        lines += [_h(2, plugin.get("name", "Unknown Assembly")), ""]
+    # ---- Section 1: Assemblies ----
+    if assemblies:
+        lines += [_h(2, "Assemblies"), ""]
+        for asm in assemblies:
+            lines += [_h(3, asm.get("name", "Unknown")), ""]
+            lines += [
+                _table(
+                    ["Field", "Value"],
+                    [
+                        ["Assembly Name", _badge(asm.get("name", ""))],
+                        ["Version", _badge(asm.get("version", ""))],
+                        ["Isolation Mode", asm.get("isolation_mode", "")],
+                        ["Introduced Version", asm.get("introduced_version", "")],
+                        ["File", f"`{asm.get('file', '')}`" if asm.get("file") else "—"],
+                    ],
+                ),
+                "",
+            ]
+
+            plugin_types = asm.get("plugin_types", [])
+            if plugin_types:
+                lines += [
+                    _h(4, "Plugin Types"),
+                    "",
+                    _table(
+                        ["Class Name", "ID"],
+                        [[_badge(pt.get("name", "")), pt.get("id", "")] for pt in plugin_types],
+                    ),
+                    "",
+                ]
+            lines += ["---", ""]
+
+    # ---- Section 2: Step Registrations ----
+    if steps:
+        lines += [_h(2, "Step Registrations"), ""]
+
+        # Group by assembly
+        by_asm: dict[str, list] = {}
+        for step in steps:
+            asm_name = step.get("assembly_name") or "Unassigned"
+            by_asm.setdefault(asm_name, []).append(step)
+
+        for asm_name, asm_steps in by_asm.items():
+            lines += [_h(3, asm_name), ""]
+            rows = []
+            for s in asm_steps:
+                name = s.get("name", "")
+                # Shorten step name for table (strip assembly prefix if present)
+                short_name = name.split(":")[-1].strip() if ":" in name else name
+                rows.append([
+                    short_name,
+                    _badge(s.get("primary_entity", "")) if s.get("primary_entity") else "—",
+                    s.get("stage", ""),
+                    s.get("mode", ""),
+                    s.get("rank", ""),
+                    s.get("deployment", ""),
+                    _badge(s.get("filtering_attributes")) if s.get("filtering_attributes") else "—",
+                ])
+            lines += [
+                _table(
+                    ["Step", "Entity", "Stage", "Mode", "Rank", "Deployment", "Filtering Attrs"],
+                    rows,
+                ),
+                "",
+                "---",
+                "",
+            ]
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# PCF Controls
+# ---------------------------------------------------------------------------
+
+def _generate_controls(controls: list[dict[str, Any]]) -> str:
+    lines = [_h(1, "PCF Custom Controls"), ""]
+
+    if not controls:
+        lines.append("_No PCF custom controls found in this solution._")
+        return "\n".join(lines)
+
+    lines += [f"**Total controls:** {len(controls)}", ""]
+
+    # Summary table
+    lines += [
+        _h(2, "Summary"),
+        "",
+        _table(
+            ["Control Name", "Namespace", "Version", "Type", "Properties", "Total Size"],
+            [
+                [
+                    c.get("display_name") or c.get("name", ""),
+                    _badge(c.get("namespace", "")),
+                    c.get("version", ""),
+                    c.get("control_type", ""),
+                    str(len(c.get("properties", []))),
+                    f"{c.get('total_size_bytes', 0) / 1024:.0f} KB",
+                ]
+                for c in controls
+            ],
+        ),
+        "",
+        "---",
+        "",
+    ]
+
+    for ctrl in controls:
+        display = ctrl.get("display_name") or ctrl.get("name", "Unknown")
+        lines += [_h(2, display), ""]
+
         lines += [
             _table(
                 ["Field", "Value"],
                 [
-                    ["Version", _badge(plugin.get("version", ""))],
-                    ["Isolation Mode", plugin.get("isolation_mode", "")],
-                    ["Description", plugin.get("description", "")],
+                    ["Name", _badge(ctrl.get("name", ""))],
+                    ["Namespace", _badge(ctrl.get("namespace", ""))],
+                    ["Constructor", _badge(ctrl.get("constructor", ""))],
+                    ["Version", ctrl.get("version", "")],
+                    ["Control Type", ctrl.get("control_type", "")],
+                    ["API Version", ctrl.get("api_version", "")],
+                    ["Built By", ctrl.get("built_by", "")],
+                    ["Total Size", f"{ctrl.get('total_size_bytes', 0) / 1024:.0f} KB"],
                 ],
             ),
             "",
         ]
 
-        steps = plugin.get("steps", [])
-        if steps:
+        if ctrl.get("description"):
+            lines += [f"> {ctrl['description']}", ""]
+
+        props = ctrl.get("properties", [])
+        if props:
             lines += [
-                _h(3, "Step Registrations"),
+                _h(3, "Properties"),
                 "",
                 _table(
-                    ["Name", "Message", "Stage", "Mode", "Primary Entity"],
+                    ["Name", "Display Name", "Type", "Usage", "Required"],
                     [
                         [
-                            s.get("name", ""),
-                            s.get("message", ""),
-                            s.get("stage", ""),
-                            s.get("mode", ""),
-                            s.get("primary_entity", ""),
+                            _badge(p.get("name", "")),
+                            p.get("display_name", ""),
+                            p.get("type", ""),
+                            p.get("usage", ""),
+                            "✅" if p.get("required") else "—",
                         ]
-                        for s in steps
+                        for p in props
+                    ],
+                ),
+                "",
+            ]
+
+        files = ctrl.get("files", [])
+        if files:
+            lines += [
+                _h(3, "Bundled Files"),
+                "",
+                _table(
+                    ["File", "Size"],
+                    [
+                        [f"`{f['path']}`", f"{f['size_bytes'] / 1024:.0f} KB"]
+                        for f in files
                     ],
                 ),
                 "",
@@ -727,3 +865,4 @@ def _generate_plugins(plugins: list[dict[str, Any]]) -> str:
         lines += ["---", ""]
 
     return "\n".join(lines)
+

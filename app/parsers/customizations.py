@@ -105,7 +105,10 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
         "app_modules": [],
         "global_option_sets": [],
         "web_resources": [],
-        "workflows_meta": [],  # workflow metadata cross-ref for workflows parser
+        "workflows_meta": [],
+        "plugin_assemblies": [],
+        "plugin_steps": [],
+        "custom_controls_meta": [],
     }
 
     cust_file = next((n for n in namelist if n.lower() == "customizations.xml"), None)
@@ -316,13 +319,81 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
             "introduced_version": (wr.findtext("IntroducedVersion") or "").strip(),
         })
 
+    # ---- Plugin Assemblies (SolutionPluginAssemblies) ----------------------
+    ISOLATION = {"1": "None", "2": "Sandbox", "3": "External Isolation"}
+    for asm in root.findall("SolutionPluginAssemblies/PluginAssembly"):
+        full_name = asm.get("FullName", "")
+        asm_name = full_name.split(",")[0].strip() if full_name else ""
+        version = ""
+        for part in full_name.split(","):
+            p = part.strip()
+            if p.startswith("Version="):
+                version = p[len("Version="):]
+                break
+        iso_code = (asm.findtext("IsolationMode") or "").strip()
+        file_path = (asm.findtext("FileName") or "").strip().lstrip("/")
+        plugin_types = []
+        for pt in asm.findall("PluginTypes/PluginType"):
+            class_name = pt.get("AssemblyQualifiedName", "").split(",")[0].strip()
+            plugin_types.append({
+                "name": class_name or pt.get("Name", ""),
+                "id": pt.get("PluginTypeId", ""),
+            })
+        result["plugin_assemblies"].append({
+            "name": asm_name,
+            "full_name": full_name,
+            "version": version,
+            "id": asm.get("PluginAssemblyId", ""),
+            "isolation_mode": ISOLATION.get(iso_code, iso_code),
+            "introduced_version": (asm.findtext("IntroducedVersion") or "").strip(),
+            "file": file_path,
+            "plugin_types": plugin_types,
+        })
+
+    # ---- SDK Message Processing Steps --------------------------------------
+    _STAGES = {"10": "PreValidation", "20": "PreOperation", "40": "PostOperation", "45": "PostOperation (Deprecated)"}
+    _MODES = {"0": "Synchronous", "1": "Asynchronous"}
+    _DEPLOYMENTS = {"0": "Server Only", "1": "Offline Only", "2": "Both"}
+    type_to_asm: dict[str, str] = {
+        pt["name"]: asm["name"]
+        for asm in result["plugin_assemblies"]
+        for pt in asm["plugin_types"]
+    }
+    for step in root.findall("SdkMessageProcessingSteps/SdkMessageProcessingStep"):
+        stage_code = (step.findtext("Stage") or "").strip()
+        mode_code = (step.findtext("Mode") or "").strip()
+        deploy_code = (step.findtext("SupportedDeployment") or "").strip()
+        plugin_type = (step.findtext("PluginTypeName") or "").strip()
+        class_name = plugin_type.split(",")[0].strip()
+        result["plugin_steps"].append({
+            "name": step.get("Name", ""),
+            "id": step.get("SdkMessageProcessingStepId", "").strip("{}"),
+            "plugin_type_name": plugin_type,
+            "assembly_name": type_to_asm.get(class_name, ""),
+            "primary_entity": (step.findtext("PrimaryEntity") or "").strip(),
+            "stage": _STAGES.get(stage_code, stage_code),
+            "mode": _MODES.get(mode_code, mode_code),
+            "rank": (step.findtext("Rank") or "").strip(),
+            "description": (step.findtext("Description") or "").strip(),
+            "filtering_attributes": (step.findtext("FilteringAttributes") or "").strip(),
+            "deployment": _DEPLOYMENTS.get(deploy_code, deploy_code),
+            "introduced_version": (step.findtext("IntroducedVersion") or "").strip(),
+        })
+
+    # ---- PCF Custom Controls -----------------------------------------------
+    for cc in root.findall("CustomControls/CustomControl"):
+        name = (cc.findtext("Name") or "").strip()
+        file_path = (cc.findtext("FileName") or "").strip().lstrip("/")
+        if name:
+            result["custom_controls_meta"].append({"name": name, "manifest_file": file_path})
+
     # ---- Workflow metadata (for workflows.py cross-reference) --------------
+    CATEGORY_LABELS = {
+        "0": "Classic Workflow", "1": "Dialog",
+        "2": "Business Rule", "3": "Action",
+        "4": "Business Process Flow", "5": "Cloud Flow (Power Automate)",
+    }
     for wf_el in root.findall("Workflows/Workflow"):
-        CATEGORY_LABELS = {
-            "0": "Classic Workflow", "1": "Dialog",
-            "2": "Business Rule", "3": "Action",
-            "4": "Business Process Flow", "5": "Cloud Flow (Power Automate)",
-        }
         cat = (wf_el.findtext("Category") or "").strip()
         result["workflows_meta"].append({
             "id": (wf_el.get("WorkflowId") or "").strip("{}").lower(),
