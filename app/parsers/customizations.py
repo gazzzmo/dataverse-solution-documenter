@@ -4,7 +4,7 @@ Parser: customizations.xml
 Extracts entities, attributes, forms, views, roles, entity relationships,
 connection references, app modules, and option sets.
 
-Real-world structure (from IDCT solution):
+Real-world structure (from a real Dataverse solution):
   <ImportExportXml>
     <Entities>
       <Entity Name="ebp_Branch">
@@ -38,7 +38,7 @@ Real-world structure (from IDCT solution):
       </Entity>
     </Entities>
     <Roles>
-      <Role name="BCC-IDCT-MarketingManager" .../>
+      <Role name="bcc_MarketingManager" .../>
     </Roles>
     <EntityRelationships>
       <EntityRelationship Name="bcc_contact_branch_ebp_branch" RelationshipType="..."/>
@@ -47,7 +47,7 @@ Real-world structure (from IDCT solution):
       <connectionreference connectionreferencelogicalname="..." connectorid="..." />
     </connectionreferences>
     <AppModules>
-      <AppModule><UniqueName>bcc_idct</UniqueName></AppModule>
+      <AppModule><UniqueName>bcc_myapp</UniqueName></AppModule>
     </AppModules>
   </ImportExportXml>
 

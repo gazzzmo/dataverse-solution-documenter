@@ -3,13 +3,13 @@ Parser: Environment Variables
 
 Files are at: environmentvariabledefinitions/<schemaname>/environmentvariabledefinition.xml
 
-Real-world structure (from IDCT solution):
-  <environmentvariabledefinition schemaname="bcc_idcttargetdsdsenvironment">
-    <description default="link to DSDS Environmnet ">
-      <label description="link to DSDS Environmnet " languagecode="1033" />
+Real-world structure (from a real Dataverse solution):
+  <environmentvariabledefinition schemaname="bcc_targetenvironment">
+    <description default="URL of the target environment">
+      <label description="URL of the target environment" languagecode="1033" />
     </description>
-    <displayname default="IDCT | Target DSDS Environment">
-      <label description="IDCT | Target DSDS Environment" languagecode="1033" />
+    <displayname default="Target Environment URL">
+      <label description="Target Environment URL" languagecode="1033" />
     </displayname>
     <introducedversion>0.0.0.1</introducedversion>
     <iscustomizable>1</iscustomizable>

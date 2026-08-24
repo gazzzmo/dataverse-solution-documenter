@@ -3,16 +3,16 @@ Parser: solution.xml
 
 Extracts top-level solution metadata — name, version, publisher, description.
 
-Real-world structure (from IDCT solution):
+Real-world structure (from a real Dataverse solution):
   <SolutionManifest>
-    <UniqueName>IDCT</UniqueName>
+    <UniqueName>MySolution</UniqueName>
     <LocalizedNames>
-      <LocalizedName description="IDCT" languagecode="1033" />
+      <LocalizedName description="My Solution" languagecode="1033" />
     </LocalizedNames>
     <Descriptions>
-      <Description description="Jira - ICT-2" languagecode="1033" />
+      <Description description="Example solution description" languagecode="1033" />
     </Descriptions>
-    <Version>1.0.1.10</Version>
+    <Version>1.0.0.0</Version>
     <Managed>0</Managed>
     <Publisher>
       <UniqueName>bccdefaultpublisher</UniqueName>
