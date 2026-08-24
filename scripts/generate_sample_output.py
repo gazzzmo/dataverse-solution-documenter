@@ -23,6 +23,7 @@ from app.parsers.env_vars import parse_env_vars
 from app.parsers.plugins import parse_plugins
 from app.parsers.controls import parse_controls
 from app.generators.markdown import generate_docs
+from app.core import process_solution_zip
 
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "sample-solutions")
 OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "..", "sample-output")
@@ -45,37 +46,7 @@ def process_zip(zip_path: str) -> None:
     print(f"\n📦 Processing: {zip_name}")
     print(f"   Output → sample-output/{folder_name}/")
 
-    zf = zipfile.ZipFile(zip_path)
-    nl = zf.namelist()
-
-    sol  = parse_solution(zf, nl)
-    cust = parse_customizations(zf, nl)
-    wfs  = parse_workflows(zf, nl, workflows_meta=cust.get("workflows_meta", []))
-    wrs  = parse_webresources(zf, nl, web_resources_meta=cust.get("web_resources", []))
-    evs  = parse_env_vars(zf, nl)
-    plg  = parse_plugins(
-        zf, nl,
-        plugins_meta=cust.get("plugin_assemblies", []),
-        steps_meta=cust.get("plugin_steps", []),
-    )
-    ctrl = parse_controls(zf, nl, controls_meta=cust.get("custom_controls_meta", []))
-
-    parsed = {
-        "solution": sol,
-        "entities": cust["entities"],
-        "roles": cust["roles"],
-        "entity_relationships": cust["entity_relationships"],
-        "connection_references": cust["connection_references"],
-        "app_modules": cust["app_modules"],
-        "global_option_sets": cust["global_option_sets"],
-        "workflows": wfs,
-        "webresources": wrs,
-        "env_vars": evs,
-        "plugins": plg,
-        "controls": ctrl,
-    }
-
-    docs = generate_docs(parsed)
+    parsed, docs = process_solution_zip(zip_path)
 
     for filename, content in docs.items():
         out_path = os.path.join(out_dir, filename)

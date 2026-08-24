@@ -1,0 +1,30 @@
+# Example: Azure DevOps Pipeline using Dataverse Solution Documenter
+# Triggers when a solution is exported or committed, generates documentation,
+# and publishes the documentation as an artifact / optional Git commit.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - solutions/*.zip
+
+pool:
+  vmImage: 'ubuntu-latest' # Works on 'windows-latest' or 'ubuntu-latest'
+
+variables:
+  solutionFile: '$(Build.SourcesDirectory)/sample-solutions/VendorIntegration_1_1_0_0.zip'
+  documentationOutput: '$(Build.ArtifactStagingDirectory)/docs'
+
+steps:
+  # Using the reusable pipeline template
+  - template: templates/document-solution-step.yml
+    parameters:
+      solutionPath: $(solutionFile)
+      outputPath: $(documentationOutput)
+      pythonVersion: '3.11'
+      packageSource: 'local'  # Switch to 'pypi' once published to PyPI or internal feed
+      localPackagePath: '$(Build.SourcesDirectory)'
+      publishArtifact: true
+      artifactName: 'DataverseSolutionDocs'

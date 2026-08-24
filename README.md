@@ -18,6 +18,41 @@ A web application that ingests a Microsoft Dataverse solution `.zip` export and 
 - 📝 **Outputs structured Markdown documentation** per component type
 - 🗂️ **Produces a documentation index** (`README.md`) linking all sections
 
+## CLI Usage
+
+Install the package (or in editable mode):
+```bash
+pip install .
+```
+
+Run `dsd` directly from the command line:
+```bash
+# Generate documentation from a solution zip
+dsd -i path/to/Solution.zip -o ./docs
+
+# Verbose output with detailed progress
+dsd -i path/to/Solution.zip -o ./docs -v
+```
+
+## Azure DevOps Pipeline Integration
+
+A reusable pipeline step template is provided under `azure-devops/templates/document-solution-step.yml`.
+
+### Example Pipeline Step
+
+```yaml
+steps:
+  - template: azure-devops/templates/document-solution-step.yml
+    parameters:
+      solutionPath: '$(Pipeline.Workspace)/drop/MySolution.zip'
+      outputPath: '$(Build.ArtifactStagingDirectory)/docs'
+      pythonVersion: '3.11'
+      publishArtifact: true
+      artifactName: 'SolutionDocumentation'
+```
+
+See [azure-devops/sample-pipeline.yml](azure-devops/sample-pipeline.yml) for a complete pipeline example.
+
 ## Tech Stack
 
 - **Backend:** Python 3.11+ / FastAPI
