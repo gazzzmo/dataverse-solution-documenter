@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dataverse Solution Documenter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 2.5rem;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0 0 0.5rem;
+      color: #f8fafc;
+    }
+
+    p.subtitle {
+      color: #94a3b8;
+      margin: 0 0 2rem;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .drop-zone {
+      border: 2px dashed #475569;
+      border-radius: 8px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .drop-zone.drag-over {
+      border-color: #6366f1;
+      background: rgba(99, 102, 241, 0.08);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .drop-zone .label { color: #94a3b8; font-size: 0.9rem; }
+    .drop-zone .label strong { color: #a5b4fc; }
+
+    #file-name {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: #64748b;
+      min-height: 1.2em;
+    }
+
+    #file-name.selected { color: #86efac; }
+
+    button#submit-btn {
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: 0.85rem;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button#submit-btn:hover:not(:disabled) { background: #4f46e5; }
+    button#submit-btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+    #status {
+      margin-top: 1.25rem;
+      font-size: 0.875rem;
+      text-align: center;
+      min-height: 1.25em;
+    }
+
+    #status.error { color: #f87171; }
+    #status.success { color: #86efac; }
+    #status.info { color: #94a3b8; }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #475569;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #475569;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🗂️ Dataverse Solution Documenter</h1>
+    <p class="subtitle">
+      Upload a Dataverse solution <strong>.zip</strong> export and receive a
+      structured set of Markdown documentation files.
+    </p>
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".zip" />
+      <div class="icon">📦</div>
+      <div class="label">Drag &amp; drop your <strong>solution.zip</strong> here<br>or click to browse</div>
+    </div>
+    <div id="file-name">No file selected</div>
+
+    <button id="submit-btn" disabled>Generate Documentation</button>
+    <div id="status" class="info"></div>
+  </div>
+
+  <footer>Dataverse Solution Documenter — by Gareth Howells</footer>
+
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileNameEl = document.getElementById('file-name');
+    const submitBtn = document.getElementById('submit-btn');
+    const statusEl = document.getElementById('status');
+    let selectedFile = null;
+
+    function setFile(file) {
+      if (!file || !file.name.endsWith('.zip')) {
+        statusEl.textContent = 'Please select a .zip file.';
+        statusEl.className = 'error';
+        return;
+      }
+      selectedFile = file;
+      fileNameEl.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      fileNameEl.className = 'selected';
+      submitBtn.disabled = false;
+      statusEl.textContent = '';
+      statusEl.className = 'info';
+    }
+
+    fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      setFile(e.dataTransfer.files[0]);
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      submitBtn.disabled = true;
+      statusEl.innerHTML = '<span class="spinner"></span> Processing solution...';
+      statusEl.className = 'info';
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        const response = await fetch('/api/upload', { method: 'POST', body: formData });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: 'Unknown error' }));
+          throw new Error(err.detail || `HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="(.+?)"/);
+        const filename = match ? match[1] : 'solution_docs.zip';
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        statusEl.textContent = '✅ Documentation generated! Your download should start.';
+        statusEl.className = 'success';
+      } catch (err) {
+        statusEl.textContent = `❌ Error: ${err.message}`;
+        statusEl.className = 'error';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
