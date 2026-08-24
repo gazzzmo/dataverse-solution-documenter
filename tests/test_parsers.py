@@ -1,5 +1,5 @@
 """
-Tests for solution parsers — verified against IDCT real solution structure.
+Tests for solution parsers — verified against a real Dataverse solution structure.
 """
 import io
 import zipfile
