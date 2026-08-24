@@ -19,7 +19,10 @@ def generate_docs(parsed: dict[str, Any]) -> dict[str, str]:
         "workflows.md": _generate_workflows(parsed.get("workflows", [])),
         "web-resources.md": _generate_webresources(parsed.get("webresources", [])),
         "environment-variables.md": _generate_env_vars(parsed.get("env_vars", [])),
-        "security-roles.md": _generate_roles(parsed.get("roles", [])),
+        "security-roles.md": _generate_roles(
+            parsed.get("roles", []),
+            solution_entities=[e["name"] for e in parsed.get("entities", [])],
+        ),
         "relationships.md": _generate_relationships(parsed.get("entity_relationships", [])),
         "connection-references.md": _generate_connection_refs(
             parsed.get("connection_references", [])
@@ -396,7 +399,24 @@ def _generate_env_vars(env_vars: list[dict[str, Any]]) -> str:
 # Security Roles
 # ---------------------------------------------------------------------------
 
-def _generate_roles(roles: list[dict[str, Any]]) -> str:
+# Access level display: symbol + label
+_LEVEL_SYMBOL = {
+    "Global":  "🌐 Global",
+    "Deep":    "🔵 Deep",
+    "Local":   "🟡 Local",
+    "Basic":   "🟢 Basic",
+    "None":    "⬜ None",
+}
+_LEVEL_RANK = {"Global": 4, "Deep": 3, "Local": 2, "Basic": 1, "None": 0, "": -1}
+
+_ACTIONS = ["Create", "Read", "Write", "Delete", "Append", "AppendTo", "Assign", "Share"]
+
+
+def _level(val: str) -> str:
+    return _LEVEL_SYMBOL.get(val, val or "—")
+
+
+def _generate_roles(roles: list[dict[str, Any]], solution_entities: list[str] | None = None) -> str:
     lines = [_h(1, "Security Roles"), ""]
 
     if not roles:
@@ -406,15 +426,141 @@ def _generate_roles(roles: list[dict[str, Any]]) -> str:
     lines += [
         f"**Total security roles:** {len(roles)}",
         "",
-        _table(
-            ["Role Name", "ID"],
-            [
-                [r.get("name", ""), _badge(r.get("id", "")) if r.get("id") else "—"]
-                for r in roles
-            ],
-        ),
+        "| Level | Meaning |",
+        "|---|---|",
+        "| 🌐 Global | Entire organisation |",
+        "| 🔵 Deep | Business unit + child units |",
+        "| 🟡 Local | Own business unit only |",
+        "| 🟢 Basic | Records owned by the user |",
+        "",
+        "---",
         "",
     ]
+
+    # ---- Section 1: Cross-role comparison for solution entities ----
+    sol_ents = solution_entities or []
+    if sol_ents and len(roles) > 1:
+        lines += [
+            _h(2, "Cross-Role Comparison — Solution Entities"),
+            "",
+            "> Showing **Read** access level per role for entities defined in this solution.",
+            "",
+        ]
+        role_names = [r["name"] for r in roles]
+        header = ["Entity"] + role_names
+        sep = ["---"] * len(header)
+        rows = []
+        for ent in sol_ents:
+            row = [f"`{ent}`"]
+            for role in roles:
+                ep = role.get("entity_privileges", {})
+                # Case-insensitive lookup
+                match = next(
+                    (ep[k] for k in ep if k.lower() == ent.lower()), {}
+                )
+                read_level = match.get("Read", "—")
+                row.append(_level(read_level) if read_level != "—" else "—")
+            rows.append(row)
+
+        lines.append("| " + " | ".join(header) + " |")
+        lines.append("|" + "|".join(sep) + "|")
+        for row in rows:
+            lines.append("| " + " | ".join(row) + " |")
+        lines += ["", "---", ""]
+
+    # ---- Section 2: Full entity privilege matrix per role ----
+    for role in roles:
+        role_name = role.get("name", "Unknown")
+        ep: dict[str, dict[str, str]] = role.get("entity_privileges", {})
+        misc: dict[str, str] = role.get("misc_privileges", {})
+
+        lines += [_h(2, role_name), ""]
+
+        # -- 2a: Solution entities full CRUD matrix --
+        if sol_ents:
+            lines += [
+                _h(3, "Solution Entities"),
+                "",
+                "| Entity | " + " | ".join(_ACTIONS) + " |",
+                "|---|" + "|".join(["---"] * len(_ACTIONS)) + "|",
+            ]
+            for ent in sol_ents:
+                match = next((ep[k] for k in ep if k.lower() == ent.lower()), {})
+                cells = [_level(match.get(a, "")) if match.get(a) else "—" for a in _ACTIONS]
+                lines.append(f"| `{ent}` | " + " | ".join(cells) + " |")
+            lines.append("")
+
+        # -- 2b: All other entities grouped by access level --
+        lines += [_h(3, "All Entity Privileges"), ""]
+
+        # Separate solution entities from others, group remainder by level profile
+        sol_ents_lower = {e.lower() for e in sol_ents}
+        other_entities = {k: v for k, v in ep.items() if k.lower() not in sol_ents_lower}
+
+        if other_entities:
+            # Group by highest access level (Read if present, else max of all)
+            by_level: dict[str, list[tuple[str, dict]]] = {
+                "Global": [], "Deep": [], "Local": [], "Basic": [], "Other": []
+            }
+            for ent_name, actions in sorted(other_entities.items()):
+                read_level = actions.get("Read", "")
+                top_level = read_level or max(
+                    actions.values(),
+                    key=lambda x: _LEVEL_RANK.get(x, -1),
+                    default=""
+                )
+                bucket = top_level if top_level in by_level else "Other"
+                by_level[bucket].append((ent_name, actions))
+
+            for level_name, ents in by_level.items():
+                if not ents:
+                    continue
+                lines += [
+                    f"**{_LEVEL_SYMBOL.get(level_name, level_name)} access** ({len(ents)} entities)",
+                    "",
+                    "<details><summary>Expand</summary>",
+                    "",
+                    "| Entity | " + " | ".join(_ACTIONS) + " |",
+                    "|---|" + "|".join(["---"] * len(_ACTIONS)) + "|",
+                ]
+                for ent_name, actions in ents:
+                    cells = [_level(actions.get(a, "")) if actions.get(a) else "—" for a in _ACTIONS]
+                    lines.append(f"| `{ent_name}` | " + " | ".join(cells) + " |")
+                lines += ["", "</details>", ""]
+        else:
+            lines.append("_No additional entity privileges._\n")
+
+        # -- 2c: Misc / non-entity privileges --
+        if misc:
+            lines += [
+                _h(3, "Miscellaneous Privileges"),
+                "",
+                f"**{len(misc)} non-entity privileges** (feature access, system actions)",
+                "",
+                "| Privilege | Level |",
+                "|---|---|",
+            ]
+            for priv_name, level in sorted(misc.items()):
+                lines.append(f"| {priv_name} | {_level(level)} |")
+            lines.append("")
+
+        # -- 2d: Summary counts --
+        total_entity_privs = sum(len(v) for v in ep.values())
+        lines += [
+            _h(3, "Summary"),
+            "",
+            _table(
+                ["Metric", "Count"],
+                [
+                    ["Entities with privileges", str(len(ep))],
+                    ["Total entity privilege grants", str(total_entity_privs)],
+                    ["Miscellaneous privilege grants", str(len(misc))],
+                ],
+            ),
+            "",
+            "---",
+            "",
+        ]
 
     return "\n".join(lines)
 

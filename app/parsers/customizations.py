@@ -217,11 +217,40 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
         result["entities"].append(entity_data)
 
     # ---- Roles --------------------------------------------------------------
+    # Standard CRUD+misc actions — order matters (AppendTo before Append)
+    _PRIV_ACTIONS = [
+        "AppendTo", "Append", "Create", "Delete",
+        "Read", "Write", "Assign", "Share",
+    ]
+
+    def _parse_priv(name: str) -> tuple[str | None, str]:
+        """Split a privilege name into (action, entity). Returns (None, name) for misc."""
+        raw = name[3:] if name.startswith("prv") else name
+        for action in _PRIV_ACTIONS:
+            if raw.startswith(action):
+                return action, raw[len(action):]
+        return None, raw
+
     for role in root.findall("Roles/Role"):
+        # Entity privileges: {entity_name: {action: level}}
+        entity_privs: dict[str, dict[str, str]] = {}
+        # Misc privileges (non-entity): {raw_name: level}
+        misc_privs: dict[str, str] = {}
+
+        for rp in role.findall("RolePrivileges/RolePrivilege"):
+            priv_name = rp.get("name", "")
+            level = rp.get("level", "")
+            action, entity = _parse_priv(priv_name)
+            if action and entity:
+                entity_privs.setdefault(entity, {})[action] = level
+            else:
+                misc_privs[entity] = level  # entity holds the raw remainder
+
         result["roles"].append({
             "name": role.get("name") or role.get("Name") or "",
             "id": role.get("id") or "",
-            "description": role.get("description") or "",
+            "entity_privileges": entity_privs,
+            "misc_privileges": misc_privs,
         })
 
     # ---- Entity Relationships (top-level, cross-entity) --------------------
