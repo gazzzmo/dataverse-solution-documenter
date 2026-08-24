@@ -380,3 +380,143 @@ def test_parse_env_vars_empty():
     zf = _make_zip({"solution.xml": SOLUTION_XML})
     result = parse_env_vars(zf, zf.namelist())
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Plugin Parser
+# ---------------------------------------------------------------------------
+
+CUST_WITH_PLUGINS = b"""<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml>
+  <Entities />
+  <Roles />
+  <Workflows />
+  <SolutionPluginAssemblies>
+    <PluginAssembly
+        FullName="MyCompany.MyPlugin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=abc123"
+        PluginAssemblyId="aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb"
+        CustomizationLevel="1">
+      <IsolationMode>2</IsolationMode>
+      <IntroducedVersion>1.0</IntroducedVersion>
+      <FileName>/PluginAssemblies/MyPlugin-AAAA/MyPlugin.dll</FileName>
+      <PluginTypes>
+        <PluginType
+            AssemblyQualifiedName="MyCompany.MyPlugin.MyHandler, MyCompany.MyPlugin, Version=1.0.0.0"
+            PluginTypeId="11112222-3333-4444-5555-666677778888"
+            Name="MyCompany.MyPlugin.MyHandler">
+          <FriendlyName>some-guid</FriendlyName>
+        </PluginType>
+      </PluginTypes>
+    </PluginAssembly>
+  </SolutionPluginAssemblies>
+  <SdkMessageProcessingSteps>
+    <SdkMessageProcessingStep
+        Name="MyCompany.MyPlugin.MyHandler: Create of contact"
+        SdkMessageProcessingStepId="{bc8d80e0-0000-0000-0000-000000000001}">
+      <PluginTypeName>MyCompany.MyPlugin.MyHandler, MyCompany.MyPlugin, Version=1.0.0.0</PluginTypeName>
+      <PrimaryEntity>contact</PrimaryEntity>
+      <Stage>40</Stage>
+      <Mode>1</Mode>
+      <Rank>1</Rank>
+      <SupportedDeployment>0</SupportedDeployment>
+      <IntroducedVersion>1.0</IntroducedVersion>
+      <FilteringAttributes>emailaddress1</FilteringAttributes>
+    </SdkMessageProcessingStep>
+  </SdkMessageProcessingSteps>
+  <CustomControls />
+  <optionsets />
+</ImportExportXml>"""
+
+
+def test_parse_plugins_from_customizations():
+    from app.parsers.plugins import parse_plugins
+    zf = _make_zip({"customizations.xml": CUST_WITH_PLUGINS})
+    cust = parse_customizations(zf, zf.namelist())
+    result = parse_plugins(
+        zf, zf.namelist(),
+        plugins_meta=cust["plugin_assemblies"],
+        steps_meta=cust["plugin_steps"],
+    )
+
+    assert len(result["assemblies"]) == 1
+    asm = result["assemblies"][0]
+    assert asm["name"] == "MyCompany.MyPlugin"
+    assert asm["version"] == "1.0.0.0"
+    assert asm["isolation_mode"] == "Sandbox"
+    assert len(asm["plugin_types"]) == 1
+    assert asm["plugin_types"][0]["name"] == "MyCompany.MyPlugin.MyHandler"
+
+    assert len(result["steps"]) == 1
+    step = result["steps"][0]
+    assert step["primary_entity"] == "contact"
+    assert step["stage"] == "PostOperation"
+    assert step["mode"] == "Asynchronous"
+    assert step["filtering_attributes"] == "emailaddress1"
+    assert step["assembly_name"] == "MyCompany.MyPlugin"
+
+
+# ---------------------------------------------------------------------------
+# Controls Parser
+# ---------------------------------------------------------------------------
+
+CUST_WITH_CONTROLS = b"""<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml>
+  <Entities />
+  <Roles />
+  <Workflows />
+  <CustomControls>
+    <CustomControl>
+      <Name>myns_MyNamespace.MyControl</Name>
+      <FileName>/Controls/myns_MyNamespace.MyControl/ControlManifest.xml</FileName>
+    </CustomControl>
+  </CustomControls>
+  <optionsets />
+</ImportExportXml>"""
+
+CONTROL_MANIFEST = b"""<?xml version="1.0" encoding="utf-8"?>
+<manifest>
+  <control namespace="MyNamespace" constructor="MyControl" version="1.2.3"
+           display-name-key="My Control" description-key="Does something useful."
+           control-type="standard" api-version="1.3.16">
+    <property name="InputField" display-name-key="Input" of-type="SingleLine.Text"
+              usage="bound" required="true" description-key="The input field." />
+    <property name="OutputField" display-name-key="Output" of-type="SingleLine.Text"
+              usage="output" required="false" description-key="The output." />
+    <resources>
+      <code path="bundle.js" order="1" />
+    </resources>
+    <built-by name="pac" version="1.39.3" />
+  </control>
+</manifest>"""
+
+
+def test_parse_controls_basic():
+    from app.parsers.controls import parse_controls
+    zf = _make_zip({
+        "customizations.xml": CUST_WITH_CONTROLS,
+        "Controls/myns_MyNamespace.MyControl/ControlManifest.xml": CONTROL_MANIFEST,
+        "Controls/myns_MyNamespace.MyControl/bundle.js": b"// bundle",
+    })
+    cust = parse_customizations(zf, zf.namelist())
+    controls = parse_controls(zf, zf.namelist(), controls_meta=cust["custom_controls_meta"])
+
+    assert len(controls) == 1
+    ctrl = controls[0]
+    assert ctrl["name"] == "myns_MyNamespace.MyControl"
+    assert ctrl["namespace"] == "MyNamespace"
+    assert ctrl["constructor"] == "MyControl"
+    assert ctrl["version"] == "1.2.3"
+    assert ctrl["display_name"] == "My Control"
+    assert ctrl["description"] == "Does something useful."
+    assert ctrl["control_type"] == "standard"
+    assert ctrl["api_version"] == "1.3.16"
+    assert ctrl["built_by"] == "pac v1.39.3"
+
+    assert len(ctrl["properties"]) == 2
+    assert ctrl["properties"][0]["name"] == "InputField"
+    assert ctrl["properties"][0]["required"] is True
+    assert ctrl["properties"][0]["usage"] == "bound"
+    assert ctrl["properties"][1]["name"] == "OutputField"
+    assert ctrl["properties"][1]["required"] is False
+
+    assert ctrl["total_size_bytes"] > 0

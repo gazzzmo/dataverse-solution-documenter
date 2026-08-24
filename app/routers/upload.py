@@ -14,6 +14,7 @@ from app.parsers.workflows import parse_workflows
 from app.parsers.webresources import parse_webresources
 from app.parsers.env_vars import parse_env_vars
 from app.parsers.plugins import parse_plugins
+from app.parsers.controls import parse_controls
 from app.generators.markdown import generate_docs
 
 router = APIRouter(prefix="/api", tags=["upload"])
@@ -46,46 +47,50 @@ async def upload_solution(file: UploadFile = File(...)):
     # Parse solution metadata
     solution_data = parse_solution(solution_zip, namelist)
 
-    # Parse customizations.xml — this is the main data source for most components
-    customizations_data = parse_customizations(solution_zip, namelist)
+    # Parse customizations.xml — primary data source for most components
+    cust = parse_customizations(solution_zip, namelist)
 
-    # Workflows: pass the pre-parsed metadata from customizations to avoid re-parsing
+    # Parsers that consume pre-parsed customizations data (avoids re-parsing)
     workflows_data = parse_workflows(
-        solution_zip,
-        namelist,
-        workflows_meta=customizations_data.get("workflows_meta", []),
+        solution_zip, namelist,
+        workflows_meta=cust.get("workflows_meta", []),
     )
-
-    # Web resources: metadata comes from customizations.xml
     webresources_data = parse_webresources(
-        solution_zip,
-        namelist,
-        web_resources_meta=customizations_data.get("web_resources", []),
+        solution_zip, namelist,
+        web_resources_meta=cust.get("web_resources", []),
+    )
+    env_vars_data = parse_env_vars(solution_zip, namelist)
+
+    # Plugins: now reads from customizations data (SolutionPluginAssemblies + SdkMessageProcessingSteps)
+    plugins_data = parse_plugins(
+        solution_zip, namelist,
+        plugins_meta=cust.get("plugin_assemblies", []),
+        steps_meta=cust.get("plugin_steps", []),
     )
 
-    # Environment variables and plugins parse their own files
-    env_vars_data = parse_env_vars(solution_zip, namelist)
-    plugins_data = parse_plugins(solution_zip, namelist)
+    # PCF controls: reads ControlManifest.xml files from Controls/ folder
+    controls_data = parse_controls(
+        solution_zip, namelist,
+        controls_meta=cust.get("custom_controls_meta", []),
+    )
 
-    # Bundle all parsed data
     parsed = {
         "solution": solution_data,
-        "entities": customizations_data.get("entities", []),
-        "roles": customizations_data.get("roles", []),
-        "entity_relationships": customizations_data.get("entity_relationships", []),
-        "connection_references": customizations_data.get("connection_references", []),
-        "app_modules": customizations_data.get("app_modules", []),
-        "global_option_sets": customizations_data.get("global_option_sets", []),
+        "entities": cust.get("entities", []),
+        "roles": cust.get("roles", []),
+        "entity_relationships": cust.get("entity_relationships", []),
+        "connection_references": cust.get("connection_references", []),
+        "app_modules": cust.get("app_modules", []),
+        "global_option_sets": cust.get("global_option_sets", []),
         "workflows": workflows_data,
         "webresources": webresources_data,
         "env_vars": env_vars_data,
         "plugins": plugins_data,
+        "controls": controls_data,
     }
 
-    # Generate Markdown documents
     docs = generate_docs(parsed)
 
-    # Pack docs into a ZIP response
     out_buffer = io.BytesIO()
     with zipfile.ZipFile(out_buffer, "w", zipfile.ZIP_DEFLATED) as out_zip:
         for filename, content in docs.items():
