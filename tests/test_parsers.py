@@ -98,7 +98,29 @@ CUSTOMIZATIONS_XML = b"""<?xml version="1.0" encoding="utf-8"?>
     </Entity>
   </Entities>
   <Roles>
-    <Role name="TS-ReadOnly" id="{role-001}" />
+    <Role name="TS-ReadOnly" id="{role-001}">
+      <IsCustomizable>1</IsCustomizable>
+      <IsAutoAssigned>0</IsAutoAssigned>
+      <RolePrivileges>
+        <RolePrivilege name="prvReadts_testentity" level="Basic" />
+        <RolePrivilege name="prvReadContact" level="Local" />
+        <RolePrivilege name="prvCreatets_testentity" level="Basic" />
+        <RolePrivilege name="prvGoOffline" level="Global" />
+        <RolePrivilege name="prvExportToExcel" level="Global" />
+      </RolePrivileges>
+    </Role>
+    <Role name="TS-Admin" id="{role-002}">
+      <IsCustomizable>1</IsCustomizable>
+      <IsAutoAssigned>0</IsAutoAssigned>
+      <RolePrivileges>
+        <RolePrivilege name="prvReadts_testentity" level="Deep" />
+        <RolePrivilege name="prvCreatets_testentity" level="Deep" />
+        <RolePrivilege name="prvWritets_testentity" level="Deep" />
+        <RolePrivilege name="prvDeletets_testentity" level="Deep" />
+        <RolePrivilege name="prvReadContact" level="Deep" />
+        <RolePrivilege name="prvGoOffline" level="Global" />
+      </RolePrivileges>
+    </Role>
   </Roles>
   <EntityRelationships>
     <EntityRelationship Name="ts_rel_one" />
@@ -223,8 +245,30 @@ def test_parse_customizations_entities():
 def test_parse_customizations_roles():
     zf = _make_zip({"customizations.xml": CUSTOMIZATIONS_XML})
     result = parse_customizations(zf, zf.namelist())
-    assert len(result["roles"]) == 1
-    assert result["roles"][0]["name"] == "TS-ReadOnly"
+    assert len(result["roles"]) == 2
+
+    readonly = result["roles"][0]
+    assert readonly["name"] == "TS-ReadOnly"
+
+    # Entity privileges parsed correctly
+    ep = readonly["entity_privileges"]
+    assert "ts_testentity" in ep
+    assert ep["ts_testentity"]["Read"] == "Basic"
+    assert ep["ts_testentity"]["Create"] == "Basic"
+    assert "Contact" in ep
+    assert ep["Contact"]["Read"] == "Local"
+
+    # Misc privileges (non-entity actions)
+    misc = readonly["misc_privileges"]
+    assert "GoOffline" in misc
+    assert misc["GoOffline"] == "Global"
+    assert "ExportToExcel" in misc
+
+    # Second role
+    admin = result["roles"][1]
+    assert admin["name"] == "TS-Admin"
+    assert admin["entity_privileges"]["ts_testentity"]["Read"] == "Deep"
+    assert admin["entity_privileges"]["ts_testentity"]["Delete"] == "Deep"
 
 
 def test_parse_customizations_connection_refs():
