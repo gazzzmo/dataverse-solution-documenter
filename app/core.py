@@ -66,6 +66,7 @@ def process_solution_zip(zip_source: Union[str, Path, bytes, io.BytesIO]) -> tup
             "entity_relationships": cust.get("entity_relationships", []),
             "connection_references": cust.get("connection_references", []),
             "app_modules": cust.get("app_modules", []),
+            "sitemaps": cust.get("sitemaps", []),
             "global_option_sets": cust.get("global_option_sets", []),
             "workflows": workflows_data,
             "webresources": webresources_data,
