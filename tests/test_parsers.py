@@ -520,3 +520,158 @@ def test_parse_controls_basic():
     assert ctrl["properties"][1]["required"] is False
 
     assert ctrl["total_size_bytes"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Dependencies & Cross-References
+# ---------------------------------------------------------------------------
+
+def test_missing_dependencies_and_cross_references():
+    from app.core import process_solution_zip
+
+    sol_xml = b"""<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml>
+  <SolutionManifest>
+    <UniqueName>TestSolution</UniqueName>
+    <Version>1.0.0.0</Version>
+    <MissingDependencies>
+      <MissingDependency>
+        <Required type="1" schemaName="account" displayName="Account" solution="System" />
+        <Dependent type="1" schemaName="contact" displayName="Contact" />
+      </MissingDependency>
+    </MissingDependencies>
+  </SolutionManifest>
+</ImportExportXml>"""
+
+    cust_xml = b"""<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml>
+  <Entities>
+    <Entity Name="contact">
+      <EntityInfo>
+        <entity>
+          <attributes>
+            <attribute PhysicalName="new_status">
+              <Type>picklist</Type>
+              <optionset Name="new_shared_status">
+                <Options>
+                  <Option Value="1"><LocalizedLabels><LocalizedLabel description="Active" languagecode="1033"/></LocalizedLabels></Option>
+                </Options>
+              </optionset>
+            </attribute>
+          </attributes>
+        </entity>
+      </EntityInfo>
+      <FormXml>
+        <forms>
+          <systemform>
+            <formid>{form-1}</formid>
+            <formLibraries>
+              <Library name="new_/scripts/contact.js" libraryUniqueId="{lib-1}" />
+            </formLibraries>
+          </systemform>
+        </forms>
+      </FormXml>
+    </Entity>
+  </Entities>
+  <EntityRelationships>
+    <EntityRelationship Name="new_contact_account">
+      <EntityRelationshipType>OneToMany</EntityRelationshipType>
+      <ReferencingEntityName>contact</ReferencingEntityName>
+      <ReferencedEntityName>account</ReferencedEntityName>
+      <ReferencingAttributeName>accountid</ReferencingAttributeName>
+    </EntityRelationship>
+  </EntityRelationships>
+  <connectionreferences>
+    <connectionreference connectionreferencelogicalname="new_dataverse_conn" connectorid="/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps" />
+  </connectionreferences>
+  <AppModules>
+    <AppModule>
+      <UniqueName>new_app</UniqueName>
+      <AppModuleComponents>
+        <AppModuleComponent type="1" schemaName="contact" />
+      </AppModuleComponents>
+    </AppModule>
+  </AppModules>
+  <optionsets>
+    <optionset Name="new_shared_status">
+      <LocalizedNames><LocalizedName description="Shared Status" languagecode="1033"/></LocalizedNames>
+      <Options><Option Value="1"><LocalizedLabels><LocalizedLabel description="Active" languagecode="1033"/></LocalizedLabels></Option></Options>
+    </optionset>
+  </optionsets>
+  <WebResources>
+    <WebResource>
+      <Name>new_/scripts/contact.js</Name>
+      <WebResourceType>3</WebResourceType>
+    </WebResource>
+  </WebResources>
+</ImportExportXml>"""
+
+    flow_json = b"""{
+      "properties": {
+        "connectionReferences": {
+          "shared_commondataserviceforapps": {
+            "connection": {
+              "connectionReferenceLogicalName": "new_dataverse_conn"
+            }
+          }
+        },
+        "definition": {
+          "parameters": {
+            "Param1": {
+              "metadata": {
+                "schemaName": "new_EnvironmentUrl"
+              }
+            }
+          },
+          "triggers": {
+            "manual": {
+              "type": "Request"
+            }
+          },
+          "actions": {
+            "List_rows": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "entityName": "contact"
+                }
+              }
+            }
+          }
+        }
+      }
+    }"""
+
+    zf_buf = io.BytesIO()
+    with zipfile.ZipFile(zf_buf, "w") as zf:
+        zf.writestr("solution.xml", sol_xml)
+        zf.writestr("customizations.xml", cust_xml)
+        zf.writestr("Workflows/TestFlow-11111111-2222-3333-4444-555555555555.json", flow_json)
+
+    parsed, docs = process_solution_zip(zf_buf.getvalue())
+
+    # Check solution-overview.md has Dependencies & Prerequisites
+    assert "## Dependencies & Prerequisites" in docs["solution-overview.md"]
+    assert "`account`" in docs["solution-overview.md"]
+
+    # Check entities.md has Dependencies & References
+    assert "### Dependencies & References" in docs["entities.md"]
+    assert "`new_contact_account`" in docs["entities.md"]
+    assert "`new_shared_status`" in docs["entities.md"]
+    assert "`new_/scripts/contact.js`" in docs["entities.md"]
+
+    # Check workflows.md has connections, env vars, dataverse tables
+    assert "`new_dataverse_conn`" in docs["workflows.md"]
+    assert "`new_EnvironmentUrl`" in docs["workflows.md"]
+    assert "`contact`" in docs["workflows.md"]
+
+    # Check connection-references.md references the workflow
+    assert "TestFlow" in docs["connection-references.md"]
+
+    # Check web-resources.md references the contact entity form
+    assert "## Web Resource Form Dependencies" in docs["web-resources.md"]
+    assert "contact" in docs["web-resources.md"]
+
+    # Check global-option-sets.md references the contact attribute
+    assert "contact.new_status" in docs["global-option-sets.md"]
+

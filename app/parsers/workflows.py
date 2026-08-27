@@ -14,7 +14,7 @@ from typing import Any
 
 
 def _extract_cloud_flow_details(content: bytes) -> dict[str, Any]:
-    """Parse a Power Automate JSON flow file for trigger and action metadata."""
+    """Parse a Power Automate JSON flow file for trigger, action, and dependency metadata."""
     try:
         data = json.loads(content)
     except Exception:
@@ -24,13 +24,48 @@ def _extract_cloud_flow_details(content: bytes) -> dict[str, Any]:
     defn = props.get("definition", {})
 
     triggers = list(defn.get("triggers", {}).keys())
-    actions = list(defn.get("actions", {}).keys())
+    actions_dict = defn.get("actions", {})
+    actions = list(actions_dict.keys())
     conn_refs = list(props.get("connectionReferences", {}).keys())
+
+    # Extract detailed connection reference logical names
+    detailed_conn_refs = []
+    for ref_key, ref_val in props.get("connectionReferences", {}).items():
+        logical_name = ref_val.get("connection", {}).get("connectionReferenceLogicalName") or ref_key
+        if logical_name not in detailed_conn_refs:
+            detailed_conn_refs.append(logical_name)
+
+    # Extract environment variables referenced in flow parameters or actions
+    env_vars = []
+    for param_name, param_val in defn.get("parameters", {}).items():
+        if isinstance(param_val, dict):
+            schema_name = param_val.get("metadata", {}).get("schemaName")
+            if schema_name and schema_name not in env_vars:
+                env_vars.append(schema_name)
+
+    # Extract Dataverse entities accessed across triggers and actions
+    dataverse_entities = []
+
+    def _scan_for_entities(obj: Any):
+        if isinstance(obj, dict):
+            entity_name = obj.get("entityName") or obj.get("item/entityName")
+            if entity_name and isinstance(entity_name, str) and entity_name not in dataverse_entities:
+                dataverse_entities.append(entity_name)
+            for v in obj.values():
+                _scan_for_entities(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _scan_for_entities(item)
+
+    _scan_for_entities(defn.get("triggers", {}))
+    _scan_for_entities(actions_dict)
 
     return {
         "triggers": triggers,
         "actions": actions,
-        "connection_refs": conn_refs,
+        "connection_refs": detailed_conn_refs or conn_refs,
+        "env_vars": env_vars,
+        "dataverse_entities": dataverse_entities,
         "schema_version": defn.get("$schema", ""),
     }
 
@@ -97,6 +132,8 @@ def parse_workflows(
             "triggers": [],
             "actions": [],
             "connection_refs": [],
+            "env_vars": [],
+            "dataverse_entities": [],
         }
 
         # Find matching file: prefer the path declared in metadata, fall back to GUID match
@@ -120,6 +157,8 @@ def parse_workflows(
                         "triggers": details.get("triggers", []),
                         "actions": details.get("actions", []),
                         "connection_refs": details.get("connection_refs", []),
+                        "env_vars": details.get("env_vars", []),
+                        "dataverse_entities": details.get("dataverse_entities", []),
                     })
             except Exception:
                 pass
@@ -151,6 +190,8 @@ def parse_workflows(
             "triggers": [],
             "actions": [],
             "connection_refs": [],
+            "env_vars": [],
+            "dataverse_entities": [],
         }
         try:
             content = zf.read(n)
@@ -160,6 +201,8 @@ def parse_workflows(
                     "triggers": details.get("triggers", []),
                     "actions": details.get("actions", []),
                     "connection_refs": details.get("connection_refs", []),
+                    "env_vars": details.get("env_vars", []),
+                    "dataverse_entities": details.get("dataverse_entities", []),
                 })
         except Exception:
             pass
