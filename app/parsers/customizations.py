@@ -196,7 +196,7 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
         if form_xml_el is not None:
             for forms_container in form_xml_el.findall("forms"):
                 for sf in forms_container.findall("systemform"):
-                    form_id = (sf.findtext("formid") or "").strip()
+                    form_id = (sf.findtext("formid") or "").strip("{}").lower()
                     form_version = (sf.findtext("IntroducedVersion") or "").strip()
                     form_state = (sf.findtext("FormActivationState") or "1").strip()
                     form_name = _localized_name(sf.find("LocalizedNames"))
@@ -222,11 +222,13 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
             savedqueries_inner = sq_el.find("savedqueries")
             if savedqueries_inner is not None:
                 for sq in savedqueries_inner.findall("savedquery"):
+                    view_id = (sq.findtext("savedqueryid") or "").strip("{}").lower()
                     q_type_raw = (sq.findtext("querytype") or "0").strip()
                     q_type_label = QUERY_TYPES.get(q_type_raw, f"Type {q_type_raw}")
                     view_name = _localized_name(sq.find("LocalizedNames"))
                     entity_data["views"].append({
                         "name": view_name or "Unnamed View",
+                        "id": view_id,
                         "type": q_type_label,
                         "type_code": q_type_raw,
                     })
@@ -295,21 +297,30 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
     for app in root.findall("AppModules/AppModule"):
         app_name = _localized_name(app.find("LocalizedNames"))
 
-        # App module components (included tables, sitemaps, dashboards)
+        # App module components (included tables, sitemaps, dashboards, forms, views, BPFs)
         app_entities = []
         app_sitemaps = []
         app_dashboards = []
+        app_forms = []
+        app_views = []
+        app_bpfs = []
         app_roles = [r.get("id", "").strip("{}") for r in app.findall(".//AppModuleRoleMaps/Role")]
 
         for comp in app.findall(".//AppModuleComponents/AppModuleComponent"):
             c_type = comp.get("type", "")
             c_schema = comp.get("schemaName", "")
-            c_id = comp.get("id", "").strip("{}")
+            c_id = comp.get("id", "").strip("{}").lower()
             if c_type == "1" and c_schema:
                 app_entities.append(c_schema)
             elif c_type == "62" and c_schema:
                 app_sitemaps.append(c_schema)
             elif c_type == "60" and c_id:
+                app_forms.append(c_id)
+            elif c_type == "26" and c_id:
+                app_views.append(c_id)
+            elif c_type == "29" and c_id:
+                app_bpfs.append(c_id)
+            elif c_type == "59" and c_id:
                 app_dashboards.append(c_id)
 
         result["app_modules"].append({
@@ -319,8 +330,48 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
             "web_resource_id": (app.findtext("WebResourceId") or "").strip(),
             "entities": app_entities,
             "sitemaps": app_sitemaps,
+            "form_ids": app_forms,
+            "view_ids": app_views,
+            "bpf_ids": app_bpfs,
+            "dashboard_ids": app_dashboards,
             "role_ids": app_roles,
         })
+
+    # ---- Sitemaps ----------------------------------------------------------
+    sitemaps = []
+    for sm in root.findall(".//SiteMap"):
+        areas = []
+        for area in sm.findall("./Area"):
+            area_title_el = area.find("./Titles/Title") if area.find("./Titles/Title") is not None else area.find("./Title")
+            area_title = area_title_el.get("Title") if area_title_el is not None else (area.get("Id") or "Area")
+            groups = []
+            for group in area.findall("./Group"):
+                group_title_el = group.find("./Titles/Title") if group.find("./Titles/Title") is not None else group.find("./Title")
+                group_title = group_title_el.get("Title") if group_title_el is not None else (group.get("Id") or "Group")
+                subareas = []
+                for sub in group.findall("./SubArea"):
+                    sub_title_el = sub.find("./Titles/Title") if sub.find("./Titles/Title") is not None else sub.find("./Title")
+                    sub_title = sub_title_el.get("Title") if sub_title_el is not None else (sub.get("Entity") or sub.get("Url") or sub.get("Id") or "SubArea")
+                    subareas.append({
+                        "id": sub.get("Id", ""),
+                        "title": sub_title,
+                        "entity": sub.get("Entity", ""),
+                        "url": sub.get("Url", ""),
+                    })
+                groups.append({
+                    "id": group.get("Id", ""),
+                    "title": group_title,
+                    "subareas": subareas,
+                })
+            areas.append({
+                "id": area.get("Id", ""),
+                "title": area_title,
+                "groups": groups,
+            })
+        sitemaps.append({
+            "areas": areas,
+        })
+    result["sitemaps"] = sitemaps
 
     # ---- Global Option Sets ------------------------------------------------
     for opt_set in root.findall("optionsets/optionset"):

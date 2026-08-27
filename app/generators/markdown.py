@@ -40,7 +40,9 @@ def generate_docs(parsed: dict[str, Any]) -> dict[str, str]:
         ),
         "app-modules.md": _generate_app_modules(
             parsed.get("app_modules", []),
+            entities=parsed.get("entities", []),
             roles=parsed.get("roles", []),
+            sitemaps=parsed.get("sitemaps", []),
             webresources=parsed.get("webresources", []),
         ),
         "plugins.md": _generate_plugins(parsed.get("plugins", {})),
@@ -820,7 +822,9 @@ def _generate_connection_refs(
 
 def _generate_app_modules(
     apps: list[dict[str, Any]],
+    entities: list[dict[str, Any]] | None = None,
     roles: list[dict[str, Any]] | None = None,
+    sitemaps: list[dict[str, Any]] | None = None,
     webresources: list[dict[str, Any]] | None = None,
 ) -> str:
     lines = [_h(1, "Model-Driven Apps (App Modules)"), ""]
@@ -829,24 +833,121 @@ def _generate_app_modules(
         lines.append("_No app modules found in this solution._")
         return "\n".join(lines)
 
+    lines += [f"**Total Model-Driven Apps:** {len(apps)}", ""]
+
+    # Build lookup dictionaries
+    ents_list = entities or []
+    form_map: dict[str, tuple[str, str]] = {}
+    view_map: dict[str, tuple[str, str]] = {}
+    entity_display_map: dict[str, str] = {}
+
+    for e in ents_list:
+        e_schema = e.get("name", "")
+        e_disp = e.get("display_name") or e_schema
+        entity_display_map[e_schema.lower()] = e_disp
+        for f in e.get("forms", []):
+            f_id = (f.get("id") or "").lower()
+            if f_id:
+                form_map[f_id] = (e_disp, f.get("name") or "Unnamed Form")
+        for v in e.get("views", []):
+            v_id = (v.get("id") or "").lower()
+            if v_id:
+                view_map[v_id] = (e_disp, v.get("name") or "Unnamed View")
+
+    all_sitemaps = sitemaps or []
+
     for app in apps:
-        lines += [_h(2, app.get("display_name") or app.get("unique_name", "Unknown")), ""]
+        app_name = app.get("display_name") or app.get("unique_name", "Unknown")
+        lines += [_h(2, app_name), ""]
         rows = [
             ["Unique Name", _badge(app.get("unique_name", ""))],
-            ["Display Name", app.get("display_name", "")],
+            ["Display Name", app_name],
         ]
         if app.get("description"):
             rows.append(["Description", app["description"]])
 
-        ents = app.get("entities", [])
-        if ents:
-            rows.append(["Included Tables / Entities", ", ".join(_badge(e) for e in ents)])
+        lines += [_table(["Field", "Value"], rows), ""]
 
-        sitemaps = app.get("sitemaps", [])
-        if sitemaps:
-            rows.append(["Sitemap Components", ", ".join(_badge(s) for s in sitemaps)])
+        # ---- Sitemap Navigation Hierarchy ----
+        if all_sitemaps:
+            lines += [_h(3, "Sitemap Navigation Structure"), ""]
+            for sm_idx, sm in enumerate(all_sitemaps, 1):
+                for area in sm.get("areas", []):
+                    lines += [f"#### Area: **{area.get('title', 'Area')}**", ""]
+                    for group in area.get("groups", []):
+                        lines += [f"- **Group: {group.get('title', 'Group')}**"]
+                        for sub in group.get("subareas", []):
+                            target = ""
+                            if sub.get("entity"):
+                                e_name = entity_display_map.get(sub["entity"].lower(), sub["entity"])
+                                target = f"Table: `{sub['entity']}` ({e_name})"
+                            elif sub.get("url"):
+                                target = f"URL: `{sub['url']}`"
+                            else:
+                                target = sub.get("id", "")
+                            lines += [f"  - `{sub.get('title', 'SubArea')}` → {target}"]
+                    lines.append("")
 
-        lines += [_table(["Field", "Value"], rows), "", "---", ""]
+        # ---- Included Entities / Tables ----
+        included_ents = app.get("entities", [])
+        if included_ents:
+            lines += [_h(3, f"Included Tables ({len(included_ents)})"), ""]
+            ent_rows = []
+            for e_schema in sorted(included_ents):
+                disp = entity_display_map.get(e_schema.lower(), e_schema)
+                ent_rows.append([_badge(e_schema), disp])
+            lines += [_table(["Table Schema Name", "Display Name"], ent_rows), ""]
+
+        # ---- Included Forms ----
+        form_ids = app.get("form_ids", [])
+        if form_ids:
+            lines += [_h(3, f"Included Forms ({len(form_ids)})"), ""]
+            form_rows = []
+            for fid in form_ids:
+                if fid in form_map:
+                    tbl, fname = form_map[fid]
+                    form_rows.append([tbl, fname, _badge(fid)])
+                else:
+                    form_rows.append(["External / System Table", "System Form", _badge(fid)])
+            lines += [_table(["Table", "Form Name", "Form ID"], form_rows), ""]
+
+        # ---- Included Views ----
+        view_ids = app.get("view_ids", [])
+        if view_ids:
+            lines += [_h(3, f"Included Views ({len(view_ids)})"), ""]
+            view_rows = []
+            for vid in view_ids:
+                if vid in view_map:
+                    tbl, vname = view_map[vid]
+                    view_rows.append([tbl, vname, _badge(vid)])
+                else:
+                    view_rows.append(["External / System Table", "System View", _badge(vid)])
+            lines += [_table(["Table", "View Name", "View ID"], view_rows), ""]
+
+        # ---- Included Dashboards ----
+        dash_ids = app.get("dashboard_ids", [])
+        if dash_ids:
+            lines += [_h(3, f"Included Dashboards ({len(dash_ids)})"), ""]
+            dash_rows = []
+            for did in dash_ids:
+                if did in form_map:
+                    tbl, dname = form_map[did]
+                    dash_rows.append([dname, _badge(did)])
+                else:
+                    dash_rows.append(["Dashboard", _badge(did)])
+            lines += [_table(["Dashboard Name", "Dashboard ID"], dash_rows), ""]
+
+        # ---- Included Business Process Flows ----
+        bpf_ids = app.get("bpf_ids", [])
+        if bpf_ids:
+            lines += [_h(3, f"Included Business Process Flows ({len(bpf_ids)})"), ""]
+            bpf_rows = []
+            for bid in bpf_ids:
+                disp = entity_display_map.get(bid.lower(), bid)
+                bpf_rows.append([disp, _badge(bid)])
+            lines += [_table(["BPF / Process Name", "Process ID"], bpf_rows), ""]
+
+        lines += ["---", ""]
 
     return "\n".join(lines)
 

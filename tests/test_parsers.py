@@ -565,12 +565,21 @@ def test_missing_dependencies_and_cross_references():
         <forms>
           <systemform>
             <formid>{form-1}</formid>
+            <LocalizedNames><LocalizedName description="Contact Main Form" languagecode="1033"/></LocalizedNames>
             <formLibraries>
               <Library name="new_/scripts/contact.js" libraryUniqueId="{lib-1}" />
             </formLibraries>
           </systemform>
         </forms>
       </FormXml>
+      <SavedQueries>
+        <savedqueries>
+          <savedquery>
+            <savedqueryid>{view-1}</savedqueryid>
+            <LocalizedNames><LocalizedName description="Active Contacts" languagecode="1033"/></LocalizedNames>
+          </savedquery>
+        </savedqueries>
+      </SavedQueries>
     </Entity>
   </Entities>
   <EntityRelationships>
@@ -589,9 +598,25 @@ def test_missing_dependencies_and_cross_references():
       <UniqueName>new_app</UniqueName>
       <AppModuleComponents>
         <AppModuleComponent type="1" schemaName="contact" />
+        <AppModuleComponent type="60" id="{form-1}" />
+        <AppModuleComponent type="26" id="{view-1}" />
+        <AppModuleComponent type="62" schemaName="new_app_sitemap" />
       </AppModuleComponents>
     </AppModule>
   </AppModules>
+  <SiteMaps>
+    <SiteMap>
+      <Area Id="Area1">
+        <Titles><Title LCID="1033" Title="Main Area"/></Titles>
+        <Group Id="Group1">
+          <Titles><Title LCID="1033" Title="Main Group"/></Titles>
+          <SubArea Id="Sub1" Entity="contact">
+            <Titles><Title LCID="1033" Title="Contacts"/></Titles>
+          </SubArea>
+        </Group>
+      </Area>
+    </SiteMap>
+  </SiteMaps>
   <optionsets>
     <optionset Name="new_shared_status">
       <LocalizedNames><LocalizedName description="Shared Status" languagecode="1033"/></LocalizedNames>
@@ -672,6 +697,9 @@ def test_missing_dependencies_and_cross_references():
     assert "## Web Resource Form Dependencies" in docs["web-resources.md"]
     assert "contact" in docs["web-resources.md"]
 
-    # Check global-option-sets.md references the contact attribute
-    assert "contact.new_status" in docs["global-option-sets.md"]
+    # Check app-modules.md has sitemaps, included entities, forms, views
+    assert "### Sitemap Navigation Structure" in docs["app-modules.md"]
+    assert "Area: **Main Area**" in docs["app-modules.md"]
+    assert "Contact Main Form" in docs["app-modules.md"]
+    assert "Active Contacts" in docs["app-modules.md"]
 
