@@ -133,4 +133,34 @@ def parse_solution(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, Any]:
         type_breakdown[label] = type_breakdown.get(label, 0) + 1
     result["component_types"] = type_breakdown
 
+    # Missing Dependencies (solution prerequisites)
+    missing_deps = []
+    for md in root.findall(".//MissingDependencies/MissingDependency"):
+        req_el = md.find("Required")
+        dep_el = md.find("Dependent")
+        if req_el is None:
+            continue
+
+        req_type = req_el.get("type", "")
+        req_type_label = COMPONENT_TYPES.get(req_type, req_type or "Unknown")
+        req_schema = req_el.get("schemaName") or req_el.get("id.uniquename") or ""
+        req_display = req_el.get("displayName") or req_schema
+        req_sol = req_el.get("solution") or "System / Core"
+
+        dep_type = dep_el.get("type", "") if dep_el is not None else ""
+        dep_type_label = COMPONENT_TYPES.get(dep_type, dep_type or "")
+        dep_schema = (dep_el.get("schemaName") or dep_el.get("displayName") or "") if dep_el is not None else ""
+        dep_parent = (dep_el.get("parentDisplayName") or dep_el.get("parentSchemaName") or "") if dep_el is not None else ""
+
+        missing_deps.append({
+            "required_type": req_type_label,
+            "required_schema": req_schema,
+            "required_display": req_display,
+            "required_solution": req_sol,
+            "dependent_type": dep_type_label,
+            "dependent_schema": dep_schema,
+            "dependent_parent": dep_parent,
+        })
+    result["missing_dependencies"] = missing_deps
+
     return result

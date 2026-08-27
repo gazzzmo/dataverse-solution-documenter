@@ -15,26 +15,44 @@ def generate_docs(parsed: dict[str, Any]) -> dict[str, str]:
     docs: dict[str, str] = {
         "README.md": _generate_index(parsed, solution_name),
         "solution-overview.md": _generate_solution_overview(solution),
-        "entities.md": _generate_entities(parsed.get("entities", [])),
+        "entities.md": _generate_entities(
+            parsed.get("entities", []),
+            relationships=parsed.get("entity_relationships", []),
+        ),
         "workflows.md": _generate_workflows(parsed.get("workflows", [])),
-        "web-resources.md": _generate_webresources(parsed.get("webresources", [])),
-        "environment-variables.md": _generate_env_vars(parsed.get("env_vars", [])),
+        "web-resources.md": _generate_webresources(
+            parsed.get("webresources", []),
+            entities=parsed.get("entities", []),
+            app_modules=parsed.get("app_modules", []),
+        ),
+        "environment-variables.md": _generate_env_vars(
+            parsed.get("env_vars", []),
+            workflows=parsed.get("workflows", []),
+        ),
         "security-roles.md": _generate_roles(
             parsed.get("roles", []),
             solution_entities=[e["name"] for e in parsed.get("entities", [])],
         ),
         "relationships.md": _generate_relationships(parsed.get("entity_relationships", [])),
         "connection-references.md": _generate_connection_refs(
-            parsed.get("connection_references", [])
+            parsed.get("connection_references", []),
+            workflows=parsed.get("workflows", []),
         ),
-        "app-modules.md": _generate_app_modules(parsed.get("app_modules", [])),
+        "app-modules.md": _generate_app_modules(
+            parsed.get("app_modules", []),
+            roles=parsed.get("roles", []),
+            webresources=parsed.get("webresources", []),
+        ),
         "plugins.md": _generate_plugins(parsed.get("plugins", {})),
         "pcf-controls.md": _generate_controls(parsed.get("controls", [])),
     }
 
     option_sets = parsed.get("global_option_sets", [])
     if option_sets:
-        docs["global-option-sets.md"] = _generate_global_option_sets(option_sets)
+        docs["global-option-sets.md"] = _generate_global_option_sets(
+            option_sets,
+            entities=parsed.get("entities", []),
+        )
 
     return docs
 
@@ -143,6 +161,33 @@ def _generate_solution_overview(solution: dict[str, Any]) -> str:
             "",
         ]
 
+    missing_deps = solution.get("missing_dependencies", [])
+    if missing_deps:
+        lines += [
+            _h(2, "Dependencies & Prerequisites"),
+            "",
+            "> External components and solutions required in target environments prior to solution import.",
+            "",
+        ]
+        dep_rows = []
+        for d in missing_deps:
+            dep_on = d.get("dependent_schema") or "Solution Root"
+            if d.get("dependent_parent"):
+                dep_on = f"{d['dependent_parent']}.{dep_on}"
+            dep_rows.append([
+                _badge(d.get("required_schema") or d.get("required_display", "")),
+                d.get("required_type", ""),
+                d.get("required_solution", ""),
+                _badge(dep_on) if dep_on != "Solution Root" else dep_on,
+            ])
+        lines += [
+            _table(
+                ["Required Component", "Type", "Required Solution", "Dependent Component"],
+                dep_rows,
+            ),
+            "",
+        ]
+
     return "\n".join(lines)
 
 
@@ -150,7 +195,10 @@ def _generate_solution_overview(solution: dict[str, Any]) -> str:
 # Entities
 # ---------------------------------------------------------------------------
 
-def _generate_entities(entities: list[dict[str, Any]]) -> str:
+def _generate_entities(
+    entities: list[dict[str, Any]],
+    relationships: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [_h(1, "Entities & Tables"), ""]
 
     if not entities:
@@ -158,6 +206,17 @@ def _generate_entities(entities: list[dict[str, Any]]) -> str:
         return "\n".join(lines)
 
     lines += [f"**Total entities:** {len(entities)}", ""]
+
+    # Pre-calculate relationships per entity
+    rels = relationships or []
+    rels_by_entity: dict[str, list[dict[str, Any]]] = {}
+    for r in rels:
+        e1 = (r.get("entity1") or "").lower()
+        e2 = (r.get("entity2") or "").lower()
+        if e1:
+            rels_by_entity.setdefault(e1, []).append(r)
+        if e2 and e2 != e1:
+            rels_by_entity.setdefault(e2, []).append(r)
 
     # Summary table
     lines += [
@@ -213,6 +272,8 @@ def _generate_entities(entities: list[dict[str, Any]]) -> str:
                     )
                     if len(attr["options"]) > 5:
                         options_str += f" (+{len(attr['options'])-5} more)"
+                elif attr.get("optionset_name"):
+                    options_str = f"OptionSet: `{attr['optionset_name']}`"
                 attr_rows.append([
                     _badge(attr.get("name", "")),
                     attr.get("display_name", ""),
@@ -221,7 +282,7 @@ def _generate_entities(entities: list[dict[str, Any]]) -> str:
                     options_str,
                 ])
             lines += [
-                _table(["Schema Name", "Display Name", "Type", "Required", "Options"], attr_rows),
+                _table(["Schema Name", "Display Name", "Type", "Required", "Options / References"], attr_rows),
                 "",
             ]
 
@@ -256,6 +317,50 @@ def _generate_entities(entities: list[dict[str, Any]]) -> str:
                 ),
                 "",
             ]
+
+        # Entity Dependencies & References
+        ent_rels = rels_by_entity.get(schema.lower(), [])
+        form_libs = []
+        for f in forms:
+            for lib in f.get("libraries", []):
+                if lib not in form_libs:
+                    form_libs.append(lib)
+
+        opt_sets_used = []
+        for attr in attrs:
+            opt_name = attr.get("optionset_name")
+            if opt_name and opt_name not in opt_sets_used:
+                opt_sets_used.append(opt_name)
+
+        if ent_rels or form_libs or opt_sets_used:
+            lines += [_h(3, "Dependencies & References"), ""]
+            if ent_rels:
+                lines += [
+                    f"**Relationships ({len(ent_rels)}):**  ",
+                ]
+                rel_rows = []
+                for r in ent_rels:
+                    other_ent = r.get("entity2") if (r.get("entity1") or "").lower() == schema.lower() else r.get("entity1")
+                    rel_rows.append([
+                        _badge(r.get("name", "")),
+                        r.get("type", "") or "OneToMany",
+                        _badge(other_ent or "—"),
+                        _badge(r.get("referencing_attribute", "")) if r.get("referencing_attribute") else "—",
+                    ])
+                lines += [
+                    _table(["Relationship", "Type", "Related Table", "Lookup Attribute"], rel_rows),
+                    "",
+                ]
+
+            if opt_sets_used:
+                lines += [
+                    f"**Referenced Option Sets:** {', '.join(_badge(o) for o in opt_sets_used)}  ",
+                ]
+            if form_libs:
+                lines += [
+                    f"**Form Web Resources (Scripts/Libraries):** {', '.join(_badge(lib) for lib in form_libs)}  ",
+                ]
+            lines.append("")
 
         lines += ["---", ""]
 
@@ -319,6 +424,14 @@ def _generate_workflows(workflows: list[dict[str, Any]]) -> str:
                 lines += [
                     f"**Connection References:** {', '.join(_badge(c) for c in wf['connection_refs'])}  ",
                 ]
+            if wf.get("env_vars"):
+                lines += [
+                    f"**Environment Variables:** {', '.join(_badge(ev) for ev in wf['env_vars'])}  ",
+                ]
+            if wf.get("dataverse_entities"):
+                lines += [
+                    f"**Dataverse Tables Accessed:** {', '.join(_badge(de) for de in wf['dataverse_entities'])}  ",
+                ]
 
             if wf.get("file"):
                 lines += [f"**Source File:** `{wf['file']}`  "]
@@ -334,7 +447,11 @@ def _generate_workflows(workflows: list[dict[str, Any]]) -> str:
 # Web Resources
 # ---------------------------------------------------------------------------
 
-def _generate_webresources(webresources: list[dict[str, Any]]) -> str:
+def _generate_webresources(
+    webresources: list[dict[str, Any]],
+    entities: list[dict[str, Any]] | None = None,
+    app_modules: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [_h(1, "Web Resources"), ""]
 
     if not webresources:
@@ -360,6 +477,39 @@ def _generate_webresources(webresources: list[dict[str, Any]]) -> str:
         "",
     ]
 
+    # Check for usage across entities / forms
+    ents = entities or []
+    wr_usage: dict[str, list[str]] = {}
+    for e in ents:
+        e_name = e.get("display_name") or e.get("name", "")
+        for f in e.get("forms", []):
+            f_name = f.get("name", "Form")
+            for lib in f.get("libraries", []):
+                wr_usage.setdefault(lib.lower(), []).append(f"{e_name} ({f_name})")
+
+    if any(wr_usage.values()):
+        lines += [
+            _h(2, "Web Resource Form Dependencies"),
+            "",
+            "> Web resources loaded into entity form scripts or client libraries.",
+            "",
+        ]
+        usage_rows = []
+        for wr in webresources:
+            wr_name = wr.get("name", "")
+            users = wr_usage.get(wr_name.lower(), [])
+            if users:
+                usage_rows.append([
+                    _badge(wr_name),
+                    wr.get("type", ""),
+                    ", ".join(users),
+                ])
+        if usage_rows:
+            lines += [
+                _table(["Web Resource", "Type", "Referenced By (Entity & Form)"], usage_rows),
+                "",
+            ]
+
     return "\n".join(lines)
 
 
@@ -367,7 +517,10 @@ def _generate_webresources(webresources: list[dict[str, Any]]) -> str:
 # Environment Variables
 # ---------------------------------------------------------------------------
 
-def _generate_env_vars(env_vars: list[dict[str, Any]]) -> str:
+def _generate_env_vars(
+    env_vars: list[dict[str, Any]],
+    workflows: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [_h(1, "Environment Variables"), ""]
 
     if not env_vars:
@@ -376,11 +529,20 @@ def _generate_env_vars(env_vars: list[dict[str, Any]]) -> str:
 
     lines += [f"**Total environment variables:** {len(env_vars)}", ""]
 
+    # Map env var schema names to consuming workflows
+    wfs = workflows or []
+    consumers: dict[str, list[str]] = {}
+    for wf in wfs:
+        wf_name = wf.get("name", "Workflow")
+        for ev_schema in wf.get("env_vars", []):
+            consumers.setdefault(ev_schema.lower(), []).append(wf_name)
+
     for ev in env_vars:
-        lines += [_h(2, ev.get("display_name") or ev.get("schema_name", "Unknown")), ""]
+        schema_name = ev.get("schema_name", "")
+        lines += [_h(2, ev.get("display_name") or schema_name or "Unknown"), ""]
 
         rows = [
-            ["Schema Name", _badge(ev.get("schema_name", ""))],
+            ["Schema Name", _badge(schema_name)],
             ["Display Name", ev.get("display_name", "")],
             ["Type", ev.get("type", "")],
             ["Required", "Yes" if ev.get("is_required") else "No"],
@@ -389,6 +551,10 @@ def _generate_env_vars(env_vars: list[dict[str, Any]]) -> str:
         ]
         if ev.get("description"):
             rows.insert(2, ["Description", ev["description"]])
+
+        flow_users = consumers.get(schema_name.lower(), [])
+        if flow_users:
+            rows.append(["Referenced by Workflows", ", ".join(_badge(u) for u in flow_users)])
 
         lines += [_table(["Field", "Value"], rows), "", "---", ""]
 
@@ -580,13 +746,14 @@ def _generate_relationships(relationships: list[dict[str, Any]]) -> str:
 
     lines += [
         _table(
-            ["Relationship Name", "Type", "Entity 1", "Entity 2"],
+            ["Relationship Name", "Type", "Entity 1 (Referencing)", "Entity 2 (Referenced)", "Lookup Attribute"],
             [
                 [
                     _badge(r.get("name", "")),
-                    r.get("type", ""),
+                    r.get("type", "") or "OneToMany",
                     _badge(r.get("entity1", "")) if r.get("entity1") else "—",
                     _badge(r.get("entity2", "")) if r.get("entity2") else "—",
+                    _badge(r.get("referencing_attribute", "")) if r.get("referencing_attribute") else "—",
                 ]
                 for r in relationships
             ],
@@ -601,7 +768,10 @@ def _generate_relationships(relationships: list[dict[str, Any]]) -> str:
 # Connection References
 # ---------------------------------------------------------------------------
 
-def _generate_connection_refs(refs: list[dict[str, Any]]) -> str:
+def _generate_connection_refs(
+    refs: list[dict[str, Any]],
+    workflows: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [_h(1, "Connection References"), ""]
 
     if not refs:
@@ -611,16 +781,32 @@ def _generate_connection_refs(refs: list[dict[str, Any]]) -> str:
     lines += [
         f"**Total connection references:** {len(refs)}",
         "",
+    ]
+
+    # Map connection references to consuming workflows
+    wfs = workflows or []
+    consumers: dict[str, list[str]] = {}
+    for wf in wfs:
+        wf_name = wf.get("name", "Workflow")
+        for cr_logical in wf.get("connection_refs", []):
+            consumers.setdefault(cr_logical.lower(), []).append(wf_name)
+
+    ref_rows = []
+    for r in refs:
+        logical_name = r.get("logical_name", "")
+        flow_users = consumers.get(logical_name.lower(), [])
+        flows_str = ", ".join(_badge(u) for u in flow_users) if flow_users else "—"
+        ref_rows.append([
+            _badge(logical_name),
+            r.get("display_name", ""),
+            _badge(r.get("connector_id", "")) if r.get("connector_id") else "—",
+            flows_str,
+        ])
+
+    lines += [
         _table(
-            ["Logical Name", "Display Name", "Connector"],
-            [
-                [
-                    _badge(r.get("logical_name", "")),
-                    r.get("display_name", ""),
-                    _badge(r.get("connector_id", "")) if r.get("connector_id") else "—",
-                ]
-                for r in refs
-            ],
+            ["Logical Name", "Display Name", "Connector", "Referenced by Workflows"],
+            ref_rows,
         ),
         "",
     ]
@@ -632,7 +818,11 @@ def _generate_connection_refs(refs: list[dict[str, Any]]) -> str:
 # App Modules
 # ---------------------------------------------------------------------------
 
-def _generate_app_modules(apps: list[dict[str, Any]]) -> str:
+def _generate_app_modules(
+    apps: list[dict[str, Any]],
+    roles: list[dict[str, Any]] | None = None,
+    webresources: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [_h(1, "Model-Driven Apps (App Modules)"), ""]
 
     if not apps:
@@ -647,6 +837,15 @@ def _generate_app_modules(apps: list[dict[str, Any]]) -> str:
         ]
         if app.get("description"):
             rows.append(["Description", app["description"]])
+
+        ents = app.get("entities", [])
+        if ents:
+            rows.append(["Included Tables / Entities", ", ".join(_badge(e) for e in ents)])
+
+        sitemaps = app.get("sitemaps", [])
+        if sitemaps:
+            rows.append(["Sitemap Components", ", ".join(_badge(s) for s in sitemaps)])
+
         lines += [_table(["Field", "Value"], rows), "", "---", ""]
 
     return "\n".join(lines)
@@ -656,16 +855,35 @@ def _generate_app_modules(apps: list[dict[str, Any]]) -> str:
 # Global Option Sets
 # ---------------------------------------------------------------------------
 
-def _generate_global_option_sets(option_sets: list[dict[str, Any]]) -> str:
+def _generate_global_option_sets(
+    option_sets: list[dict[str, Any]],
+    entities: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [_h(1, "Global Option Sets"), ""]
 
     if not option_sets:
         lines.append("_No global option sets found in this solution._")
         return "\n".join(lines)
 
+    # Map option set names to consuming entities & attributes
+    ents = entities or []
+    consumers: dict[str, list[str]] = {}
+    for e in ents:
+        e_name = e.get("display_name") or e.get("name", "")
+        for attr in e.get("attributes", []):
+            opt_name = attr.get("optionset_name")
+            if opt_name:
+                consumers.setdefault(opt_name.lower(), []).append(f"{e_name}.{attr.get('name', '')}")
+
     for os_data in option_sets:
-        name = os_data.get("display_name") or os_data.get("name", "Unknown")
+        os_schema = os_data.get("name", "")
+        name = os_data.get("display_name") or os_schema or "Unknown"
         lines += [_h(2, name), ""]
+
+        used_by = consumers.get(os_schema.lower(), [])
+        if used_by:
+            lines += [f"**Referenced by Attributes:** {', '.join(_badge(u) for u in used_by)}  ", ""]
+
         if os_data.get("options"):
             lines += [
                 _table(["Value", "Label"], [[o["value"], o["label"]] for o in os_data["options"]]),

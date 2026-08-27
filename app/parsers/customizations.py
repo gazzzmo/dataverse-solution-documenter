@@ -168,12 +168,15 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
 
                 # Option set values (picklist, state, status, boolean)
                 options = []
-                for opt in attr.findall(".//optionset/Options/Option"):
-                    val = opt.get("Value", "")
-                    lbl_el = opt.find(".//LocalizedLabels/LocalizedLabel")
-                    lbl = (lbl_el.get("description") or "") if lbl_el is not None else ""
-                    if val or lbl:
-                        options.append({"value": val, "label": lbl})
+                opt_set_el = attr.find(".//optionset")
+                opt_set_name = opt_set_el.get("Name", "") if opt_set_el is not None else ""
+                if opt_set_el is not None:
+                    for opt in opt_set_el.findall(".//Options/Option"):
+                        val = opt.get("Value", "")
+                        lbl_el = opt.find(".//LocalizedLabels/LocalizedLabel")
+                        lbl = (lbl_el.get("description") or "") if lbl_el is not None else ""
+                        if val or lbl:
+                            options.append({"value": val, "label": lbl})
 
                 attr_data: dict[str, Any] = {
                     "name": phys_name,
@@ -181,6 +184,8 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
                     "type": attr_type,
                     "required": required,
                 }
+                if opt_set_name:
+                    attr_data["optionset_name"] = opt_set_name
                 if options:
                     attr_data["options"] = options
 
@@ -195,11 +200,20 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
                     form_version = (sf.findtext("IntroducedVersion") or "").strip()
                     form_state = (sf.findtext("FormActivationState") or "1").strip()
                     form_name = _localized_name(sf.find("LocalizedNames"))
+
+                    # Form libraries / Web resource script dependencies
+                    form_libraries = []
+                    for lib in sf.findall(".//formLibraries/Library"):
+                        lib_name = lib.get("name", "").strip()
+                        if lib_name and lib_name not in form_libraries:
+                            form_libraries.append(lib_name)
+
                     entity_data["forms"].append({
                         "name": form_name or "Unnamed Form",
                         "id": form_id,
                         "version": form_version,
                         "active": form_state == "1",
+                        "libraries": form_libraries,
                     })
 
         # Views — SavedQueries/savedqueries/savedquery
@@ -258,12 +272,13 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
 
     # ---- Entity Relationships (top-level, cross-entity) --------------------
     for rel in root.findall("EntityRelationships/EntityRelationship"):
-        rel_type_raw = rel.get("RelationshipType") or ""
+        rel_type_raw = rel.get("RelationshipType") or rel.findtext("EntityRelationshipType") or ""
         result["entity_relationships"].append({
-            "name": rel.get("Name") or "",
+            "name": rel.get("Name") or rel.findtext("Name") or "",
             "type": rel_type_raw,
-            "entity1": rel.get("Entity1LogicalName") or "",
-            "entity2": rel.get("Entity2LogicalName") or "",
+            "entity1": rel.get("Entity1LogicalName") or rel.findtext("ReferencingEntityName") or "",
+            "entity2": rel.get("Entity2LogicalName") or rel.findtext("ReferencedEntityName") or "",
+            "referencing_attribute": rel.findtext("ReferencingAttributeName") or "",
             "entity1_nav": rel.get("Entity1NavigationPropertyName") or "",
             "entity2_nav": rel.get("Entity2NavigationPropertyName") or "",
         })
@@ -279,10 +294,32 @@ def parse_customizations(zf: zipfile.ZipFile, namelist: list[str]) -> dict[str, 
     # ---- App Modules -------------------------------------------------------
     for app in root.findall("AppModules/AppModule"):
         app_name = _localized_name(app.find("LocalizedNames"))
+
+        # App module components (included tables, sitemaps, dashboards)
+        app_entities = []
+        app_sitemaps = []
+        app_dashboards = []
+        app_roles = [r.get("id", "").strip("{}") for r in app.findall(".//AppModuleRoleMaps/Role")]
+
+        for comp in app.findall(".//AppModuleComponents/AppModuleComponent"):
+            c_type = comp.get("type", "")
+            c_schema = comp.get("schemaName", "")
+            c_id = comp.get("id", "").strip("{}")
+            if c_type == "1" and c_schema:
+                app_entities.append(c_schema)
+            elif c_type == "62" and c_schema:
+                app_sitemaps.append(c_schema)
+            elif c_type == "60" and c_id:
+                app_dashboards.append(c_id)
+
         result["app_modules"].append({
             "unique_name": (app.findtext("UniqueName") or "").strip(),
             "display_name": app_name or (app.findtext("UniqueName") or "").strip(),
             "description": _localized_name(app.find("Descriptions")),
+            "web_resource_id": (app.findtext("WebResourceId") or "").strip(),
+            "entities": app_entities,
+            "sitemaps": app_sitemaps,
+            "role_ids": app_roles,
         })
 
     # ---- Global Option Sets ------------------------------------------------
