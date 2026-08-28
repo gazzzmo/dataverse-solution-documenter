@@ -10,22 +10,21 @@ Real-world structure:
   customizations.xml:
     <CustomControls>
       <CustomControl>
-        <Name>o25fs_MicrosoftOptimize25.ScheduleBoardManagement</Name>
-        <FileName>/Controls/o25fs_MicrosoftOptimize25.ScheduleBoardManagement/ControlManifest.xml</FileName>
+        <Name>mycompany_MyControl.MyControl</Name>
+        <FileName>/Controls/mycompany_MyControl.MyControl/ControlManifest.xml</FileName>
       </CustomControl>
     </CustomControls>
 
   ControlManifest.xml:
     <manifest>
-      <control namespace="MicrosoftOptimize25"
-               constructor="ScheduleBoardManagement"
-               version="2.3.0"
-               display-name-key="ScheduleBoardManagement"
-               description-key="This control aims to..."
+      <control namespace="MyCompany"
+               constructor="MyControl"
+               version="1.0.0"
+               display-name-key="MyControl"
+               description-key="Example custom control"
                control-type="standard"
                api-version="1.3.15">
-        <property name="ScheduleBoardSetting"
-                  display-name-key="ScheduleBoardSetting"
+        <property name="MyProperty"
                   of-type="SingleLine.Text"
                   usage="output"
                   required="false" />

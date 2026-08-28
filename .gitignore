@@ -220,3 +220,9 @@ __marimo__/
 # Local output / caches
 output/
 
+
+# Local solution archives and generated docs (may contain client data - never commit)
+sample-solutions/
+sample-output/
+*.zip
+!tests/fixtures/*.zip

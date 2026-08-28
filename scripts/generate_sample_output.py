@@ -32,7 +32,7 @@ OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "..", "sample-output")
 def process_zip(zip_path: str) -> None:
     zip_name = os.path.basename(zip_path)
     # Derive a clean folder name — strip version suffix and extension
-    # e.g. "VendorIntegration_1_1_0_0.zip" -> "VendorIntegration"
+    # e.g. "MySolution_1_1_0_0.zip" -> "MySolution"
     base = os.path.splitext(zip_name)[0]
     parts = base.split("_")
     # Drop trailing numeric version segments

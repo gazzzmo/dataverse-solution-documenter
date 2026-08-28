@@ -7,7 +7,7 @@ Real-world structure:
 
   <SolutionPluginAssemblies>
     <PluginAssembly
-        FullName="FieldService.Optimize25.SetupVendorUser, Version=1.0.0.0, ..."
+        FullName="MyCompany.MySolution.MyPlugin, Version=1.0.0.0, ..."
         PluginAssemblyId="2468dab7-..."
         CustomizationLevel="1">
       <IsolationMode>2</IsolationMode>   <!-- 1=None, 2=Sandbox -->
@@ -18,7 +18,7 @@ Real-world structure:
         <PluginType
             AssemblyQualifiedName="..."
             PluginTypeId="..."
-            Name="FieldService.Optimize25.SetupVendorUser.SetupVendorUser">
+            Name="MyCompany.MySolution.MyPlugin.MyPluginType">
           <FriendlyName>3a280edd-...</FriendlyName>
         </PluginType>
       </PluginTypes>
@@ -27,13 +27,13 @@ Real-world structure:
 
   <SdkMessageProcessingSteps>
     <SdkMessageProcessingStep
-        Name="FieldService.Optimize25.SetupVendorUser.SetupVendorUser: Create of systemuser"
+        Name="MyCompany.MySolution.MyPlugin.MyPluginType: Create of systemuser"
         SdkMessageProcessingStepId="{bc8d80e0-...}">
       <PrimaryEntity>systemuser</PrimaryEntity>
       <Stage>40</Stage>       <!-- 10=PreValidation, 20=PreOp, 40=PostOp -->
       <Mode>1</Mode>          <!-- 0=Sync, 1=Async -->
       <Rank>1</Rank>
-      <PluginTypeName>FieldService.Optimize25.SetupVendorUser.SetupVendorUser, ...</PluginTypeName>
+      <PluginTypeName>MyCompany.MySolution.MyPlugin.MyPluginType, ...</PluginTypeName>
       <Description>...</Description>
       <FilteringAttributes></FilteringAttributes>
       <SupportedDeployment>0</SupportedDeployment>
