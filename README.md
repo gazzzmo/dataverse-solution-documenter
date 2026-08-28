@@ -74,10 +74,10 @@ See [azure-devops/sample-pipeline.yml](azure-devops/sample-pipeline.yml) for a c
 git clone https://github.com/gazzzmo/dataverse-solution-documenter.git
 cd dataverse-solution-documenter
 
-# Create venv and install dependencies
+# Create venv and install dependencies (editable, per pyproject.toml)
 uv venv
 source .venv/bin/activate
-uv pip install -r requirements.txt
+uv pip install -e ".[dev]"
 
 # Run the app
 uvicorn app.main:app --reload
@@ -114,8 +114,8 @@ docker run -p 8000:8000 dv-solution-docs
 │       └── index.html       # Upload UI
 ├── tests/
 │   └── test_parsers.py
-├── requirements.txt
 ├── pyproject.toml
+├── uv.lock
 ├── Dockerfile
 └── .github/
     └── workflows/

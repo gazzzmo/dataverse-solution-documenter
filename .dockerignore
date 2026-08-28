@@ -1,0 +1,21 @@
+# Build context exclusions — keep the image lean and free of local/client data
+.git
+.venv
+__pycache__
+**/__pycache__
+*.py[codz]
+output/
+sample-solutions/
+sample-output/
+*.zip
+tests/
+scripts/
+.github/
+.azuredevops/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+dist/
+build/
+*.egg-info/
+uv.lock.bak
