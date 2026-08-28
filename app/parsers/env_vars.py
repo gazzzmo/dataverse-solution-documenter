@@ -51,7 +51,11 @@ def _localized_value(el: ET.Element | None) -> str:
     return (el.text or "").strip()
 
 
-def parse_env_vars(zf: zipfile.ZipFile, namelist: list[str]) -> list[dict[str, Any]]:
+def parse_env_vars(
+    zf: zipfile.ZipFile,
+    namelist: list[str],
+    warnings: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Return a list of environment variable metadata dicts."""
     env_vars: list[dict[str, Any]] = []
 
@@ -64,7 +68,9 @@ def parse_env_vars(zf: zipfile.ZipFile, namelist: list[str]) -> list[dict[str, A
     for ev_file in ev_files:
         try:
             root = ET.fromstring(zf.read(ev_file))
-        except Exception:
+        except Exception as e:
+            if warnings is not None:
+                warnings.append(f"Could not parse environment variable definition '{ev_file}': {e}")
             continue
 
         # Schema name from element attribute

@@ -14,7 +14,10 @@ from typing import Any
 
 
 def _extract_cloud_flow_details(content: bytes) -> dict[str, Any]:
-    """Parse a Power Automate JSON flow file for trigger, action, and dependency metadata."""
+    """Parse a Power Automate JSON flow file for trigger, action, and dependency metadata.
+
+    Returns an empty dict if the content is not valid JSON (caller should warn).
+    """
     try:
         data = json.loads(content)
     except Exception:
@@ -74,6 +77,7 @@ def parse_workflows(
     zf: zipfile.ZipFile,
     namelist: list[str],
     workflows_meta: list[dict[str, Any]] | None = None,
+    warnings: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Return a list of workflow metadata dicts.
@@ -82,6 +86,7 @@ def parse_workflows(
     If not supplied, falls back to scanning files only.
     """
     workflows: list[dict[str, Any]] = []
+    warnings = warnings if warnings is not None else []
     meta_by_id: dict[str, dict[str, Any]] = {}
 
     if workflows_meta:
@@ -153,6 +158,12 @@ def parse_workflows(
                 content = zf.read(zip_path)
                 if zip_path.endswith(".json"):
                     details = _extract_cloud_flow_details(content)
+                    if not details:
+                        warnings.append(
+                            f"Cloud flow definition could not be parsed: '{zip_path}' "
+                            f"(workflow '{meta.get('name', 'Unknown')}') — "
+                            "triggers, actions, and dependencies may be incomplete."
+                        )
                     wf.update({
                         "triggers": details.get("triggers", []),
                         "actions": details.get("actions", []),
@@ -160,8 +171,11 @@ def parse_workflows(
                         "env_vars": details.get("env_vars", []),
                         "dataverse_entities": details.get("dataverse_entities", []),
                     })
-            except Exception:
-                pass
+            except Exception as e:
+                warnings.append(
+                    f"Could not read workflow file '{zip_path}' "
+                    f"(workflow '{meta.get('name', 'Unknown')}'): {e}"
+                )
 
         if zip_path:
             processed_zip_paths.add(zip_path)
@@ -197,6 +211,11 @@ def parse_workflows(
             content = zf.read(n)
             if n.endswith(".json"):
                 details = _extract_cloud_flow_details(content)
+                if not details:
+                    warnings.append(
+                        f"Cloud flow definition could not be parsed: '{n}' — "
+                        "triggers, actions, and dependencies may be incomplete."
+                    )
                 wf.update({
                     "triggers": details.get("triggers", []),
                     "actions": details.get("actions", []),
@@ -204,8 +223,8 @@ def parse_workflows(
                     "env_vars": details.get("env_vars", []),
                     "dataverse_entities": details.get("dataverse_entities", []),
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.append(f"Could not read workflow file '{n}': {e}")
         workflows.append(wf)
 
     return workflows

@@ -57,8 +57,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.verbose:
             print(f"Processing solution: {input_path}")
         
-        parsed, docs = process_solution_zip(input_path)
-        
+        warnings: list[str] = []
+        parsed, docs = process_solution_zip(input_path, warnings=warnings)
+
+        if warnings:
+            print(f"⚠️  {len(warnings)} parse warning(s):", file=sys.stderr)
+            for w in warnings:
+                print(f"  - {w}", file=sys.stderr)
+
         solution_name = parsed.get("solution", {}).get("display_name") or parsed.get("solution", {}).get("unique_name") or input_path.stem
         if args.verbose:
             print(f"Solution: {solution_name} ({len(docs)} document(s) generated)")

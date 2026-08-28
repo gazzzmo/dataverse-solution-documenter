@@ -18,16 +18,25 @@ from app.parsers.controls import parse_controls
 from app.generators.markdown import generate_docs
 
 
-def process_solution_zip(zip_source: Union[str, Path, bytes, io.BytesIO]) -> tuple[Dict[str, Any], Dict[str, str]]:
+def process_solution_zip(
+    zip_source: Union[str, Path, bytes, io.BytesIO],
+    warnings: list[str] | None = None,
+) -> tuple[Dict[str, Any], Dict[str, str]]:
     """
     Parse a Dataverse solution zip archive and generate Markdown documentation.
 
     Args:
         zip_source: Path to zip file, bytes, or file-like object.
+        warnings: Optional list that will be populated with non-fatal
+            parse warnings (unreadable or malformed components) so callers
+            can surface them instead of silently swallowing problems.
 
     Returns:
         tuple of (parsed_data, docs_dict) where docs_dict maps filenames to Markdown strings.
     """
+    if warnings is None:
+        warnings = []
+
     if isinstance(zip_source, (str, Path)):
         zf = zipfile.ZipFile(str(zip_source), "r")
     elif isinstance(zip_source, bytes):
@@ -43,12 +52,13 @@ def process_solution_zip(zip_source: Union[str, Path, bytes, io.BytesIO]) -> tup
         workflows_data = parse_workflows(
             zf, namelist,
             workflows_meta=cust.get("workflows_meta", []),
+            warnings=warnings,
         )
         webresources_data = parse_webresources(
             zf, namelist,
             web_resources_meta=cust.get("web_resources", []),
         )
-        env_vars_data = parse_env_vars(zf, namelist)
+        env_vars_data = parse_env_vars(zf, namelist, warnings=warnings)
         plugins_data = parse_plugins(
             zf, namelist,
             plugins_meta=cust.get("plugin_assemblies", []),
@@ -75,7 +85,7 @@ def process_solution_zip(zip_source: Union[str, Path, bytes, io.BytesIO]) -> tup
             "controls": controls_data,
         }
 
-        docs = generate_docs(parsed)
+        docs = generate_docs(parsed, warnings=warnings)
         return parsed, docs
     finally:
         zf.close()
